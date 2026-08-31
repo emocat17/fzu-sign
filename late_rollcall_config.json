@@ -1,0 +1,163 @@
+{
+  "_meta": {
+    "title": "晚点名签到请求配置（请仅用于本人或获授权的测试账号）",
+    "source_apk": "base.apk.1",
+    "source_apk_sha256": "77410AE27FA818423276DC8A6407A2616D330CF79E36D22DE7AFACB72EA2545B",
+    "source_app_version": "1.17.0",
+    "official_reference": "https://github.com/west2-online/fzuhelper-app/blob/19bd3a4/app/(tabs)/toolbox.tsx",
+    "important": "APK 内没有嵌入晚点名签到 H5 或专属提交接口；request.url/body 需要用自有账号实际请求确认后填写。"
+  },
+  "app": {
+    "package": "cn.edu.fzu.fdxypa",
+    "scheme": "kysk-fdxy-app",
+    "public_h5_url": "https://app.fzu.edu.cn/fd-app/m/index.html",
+    "late_rollcall_entry_url": "https://yzsxg.fzu.edu.cn/livecloud/project/fzu/attn/oauth2/authorize.action",
+    "late_rollcall_auth_mode": "SSO cookie",
+    "sso_cookie_domain": "https://sso.fzu.edu.cn",
+    "sso_callback_url": "https://yzsxg.fzu.edu.cn/livecloud/project/fzu/attn/oauth2/callback.action",
+    "service_deep_link": "kysk-fdxy-app://third_service?serviceId=${service.service_id}",
+    "observed_urls": [
+      "https://app.fzu.edu.cn/fd-app/m/index.html",
+      "https://app.fzu.edu.cn/fdxy",
+      "https://app.fzu.edu.cn/zhfd/",
+      "https://yzsxg.fzu.edu.cn/livecloud/project/fzu/attn/oauth2/authorize.action",
+      "https://sso.fzu.edu.cn/login"
+    ],
+    "url_notes": "late_rollcall_entry_url 来自与当前 APK 使用同一 appId/appScheme 的官方福大客户端源码；首次访问会跳转到 SSO，不能把它误当作最终签到 POST URL。"
+  },
+  "service_discovery": {
+    "enabled": false,
+    "base_url": "",
+    "candidate_paths": [
+      "/operation/service/app/v1/getMyHomeService",
+      "/operation/service/app/v1/getPageService",
+      "/operation/service/app/v1/getServiceListByGroupType",
+      "/operation/service/app/v1/selectServiceByGroupId"
+    ],
+    "notes": "这些是 APK 中的通用“我的服务”目录候选路径，不是已经确认的晚点名签到提交 URL；需要有效登录态、base URL 和请求体。"
+  },
+  "auth": {
+    "username": "",
+    "password": "",
+    "token": "",
+    "cookie": "",
+    "login_type": "password",
+    "notes": "username/password 对应 SSO account/password，仅作为记录字段；当前脚本不自动提交动态 SSO 登录表单。优先填入本人有效 SSO Cookie 到 cookie；不要把真实凭证提交到代码仓库。"
+  },
+  "identity": {
+    "app_id": "cn.edu.fzu.fdxypa",
+    "user_id": "",
+    "org_id": "",
+    "device_id": "",
+    "notes": "user_id/org_id/device_id 是否属于签到 body，需要以实际请求为准。"
+  },
+  "location": {
+    "latitude": null,
+    "longitude": null,
+    "accuracy": null,
+    "address": "",
+    "timestamp": "",
+    "known_field_candidates": [
+      "latitude",
+      "longitude",
+      "accuracy",
+      "address",
+      "timestamp",
+      "GPSLatitude",
+      "GPSLongitude"
+    ],
+    "notes": "APK 声明定位权限并保留 latitude/longitude 等字段名；不要伪造或绕过服务端定位校验。"
+  },
+  "service": {
+    "service_id": "",
+    "service_name": "晚点名签到",
+    "group_id": "",
+    "group_idx": "",
+    "service_url": "https://yzsxg.fzu.edu.cn/livecloud/project/fzu/attn/oauth2/authorize.action",
+    "url_type": "",
+    "page_type": "",
+    "scheme": "kysk-fdxy-app",
+    "app_url": "",
+    "source_url": "",
+    "entry_url": "https://yzsxg.fzu.edu.cn/livecloud/project/fzu/attn/oauth2/authorize.action",
+    "auth_mode": "SSO cookie",
+    "known_field_candidates": [
+      "serviceId",
+      "serviceName",
+      "serviceUrl",
+      "groupId",
+      "groupIdx",
+      "urlType",
+      "pageType",
+      "scheme",
+      "appUrl",
+      "sourceUrl",
+      "serviceIds"
+    ],
+    "url_status": "late_rollcall_service_url_not_embedded_in_apk",
+    "notes": "service_url 是待从“我的服务”接口响应或自有账号抓包中确认的晚点名服务地址。"
+  },
+  "request": {
+    "enabled": false,
+    "url": "",
+    "method": "POST",
+    "body_encoding": "json",
+    "query": {},
+    "headers": {
+      "Cookie": "${auth.cookie}",
+      "Content-Type": "application/json",
+      "User-Agent": "appId/cn.edu.fzu.fdxypa appScheme/kysk-fdxy-app hengfeng/fdxyappzs appType/2 ruijie-facecamera"
+    },
+    "body": {},
+    "url_status": "needs_capture_confirmation",
+    "body_status": "not_embedded_in_apk_or_public_webview_source",
+    "notes": "入口页由 SSO Cookie 认证后加载，真正签到请求由远程页面生成；不要把 serviceId/userId/坐标候选自动当作提交体。保持 enabled=false，审阅并填入自有账号实际捕获的 URL/body 后，再显式改为 true 并使用 --send。"
+  },
+  "field_inventory": {
+    "_meaning": "confirmed_in_apk means the identifier string was observed in the APK; it does not mean the field is required by the remote check-in POST.",
+    "confirmed_in_apk": [
+      "appId",
+      "serviceId",
+      "serviceName",
+      "serviceUrl",
+      "urlType",
+      "pageType",
+      "scheme",
+      "userId",
+      "orgId",
+      "deviceId",
+      "latitude",
+      "longitude",
+      "timestamp",
+      "appToken",
+      "loginToken",
+      "accountToken"
+    ],
+    "service_metadata_candidates": [
+      "groupId",
+      "groupIdx",
+      "serviceIds",
+      "appUrl",
+      "sourceUrl",
+      "urlType",
+      "pageType"
+    ],
+    "confirmed_sso_entry_flow": [
+      "late_rollcall_entry_url",
+      "sso.fzu.edu.cn Cookie",
+      "https://yzsxg.fzu.edu.cn/livecloud/project/fzu/attn/oauth2/callback.action",
+      "service=https%3A%2F%2Fyzsxg.fzu.edu.cn%2Flivecloud%2Fproject%2Ffzu%2Fattn%2Foauth2%2Fcallback.action",
+      "User-Agent appId/cn.edu.fzu.fdxypa appScheme/kysk-fdxy-app hengfeng/fdxyappzs appType/2 ruijie-facecamera"
+    ],
+    "needs_capture_confirmation": [
+      "晚点名签到提交 URL",
+      "HTTP method",
+      "实际 JSON body 字段及类型",
+      "token/Cookie/Authorization header",
+      "kyWebInfo or device header",
+      "timestamp format",
+      "signature or encryption",
+      "server-side time/location/device validation"
+    ]
+  }
+}

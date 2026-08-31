@@ -1,0 +1,13 @@
+analysis/tools/fzuhelper-app/
+analysis/tools/blutter/
+analysis/apk/
+analysis/.venv/
+*.apk
+*.apk.*
+*.aab
+*.ipa
+captures/
+*.har
+*.pcap
+*.pcapng
+base.apk.1
