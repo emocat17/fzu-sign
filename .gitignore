@@ -16,3 +16,4 @@ captures/
 base.apk.1
 .env
 data.json
+mitmproxy-ca-cert.cer
