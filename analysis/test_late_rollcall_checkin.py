@@ -15,6 +15,7 @@ from late_rollcall_checkin import (
     _print_inventory,
     _send,
     build_request,
+    default_config_path,
     load_config,
     redact_config,
     should_send,
@@ -91,6 +92,12 @@ class ConfigAndRequestTests(unittest.TestCase):
 
 
 class RootConfigTests(unittest.TestCase):
+    def test_default_config_prefers_nonempty_local_data_json(self):
+        local_data = PROJECT_ROOT / "data.json"
+        if not local_data.exists() or local_data.stat().st_size <= 2:
+            self.skipTest("local data.json template is not present")
+        self.assertEqual(default_config_path(), local_data)
+
     def test_root_config_separates_confirmed_urls_and_capture_fields(self):
         config = load_config(PROJECT_ROOT / "late_rollcall_config.json")
 

@@ -21,7 +21,8 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 
-DEFAULT_CONFIG_PATH = Path(__file__).with_name("late_rollcall_config.json")
+LOCAL_CONFIG_PATH = Path(__file__).with_name("data.json")
+REFERENCE_CONFIG_PATH = Path(__file__).with_name("late_rollcall_config.json")
 ALLOWED_METHODS = {"GET", "POST", "PUT", "PATCH"}
 ALLOWED_BODY_ENCODINGS = {"json", "form", "raw"}
 FULL_PLACEHOLDER = re.compile(r"^\$\{([^{}]+)\}$")
@@ -58,6 +59,17 @@ def load_config(path: Path) -> dict[str, Any]:
     if method not in ALLOWED_METHODS:
         raise ValueError(f"request.method must be one of {sorted(ALLOWED_METHODS)}")
     return value
+
+
+def default_config_path() -> Path:
+    """Use the ignored local config when it has content; otherwise use the reference template."""
+
+    try:
+        if LOCAL_CONFIG_PATH.is_file() and LOCAL_CONFIG_PATH.stat().st_size > 2:
+            return LOCAL_CONFIG_PATH
+    except OSError:
+        pass
+    return REFERENCE_CONFIG_PATH
 
 
 def _resolve_path(context: Mapping[str, Any], path: str) -> Any:
@@ -282,12 +294,13 @@ def _send(request: Request, timeout: float) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run a configured authorized check-in request")
-    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
+    parser.add_argument("--config", type=Path, default=None)
     parser.add_argument("--send", action="store_true", help="explicitly send the configured request")
     args = parser.parse_args(argv)
 
     try:
-        config = load_config(args.config)
+        config_path = args.config or default_config_path()
+        config = load_config(config_path)
         _print_inventory(config)
         if not should_send(config, args.send):
             print("\nDRY-RUN：未发送任何网络请求。")
