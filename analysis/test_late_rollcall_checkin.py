@@ -1,4 +1,5 @@
 import io
+import importlib
 import json
 import sys
 import threading
@@ -23,6 +24,56 @@ from late_rollcall_checkin import (
 
 
 class ConfigAndRequestTests(unittest.TestCase):
+    def test_protocol_runner_entrypoint_exists(self):
+        self.assertTrue((PROJECT_ROOT / "main.py").is_file())
+
+    def test_clock_in_payload_uses_confirmed_h5_field_order_and_values(self):
+        module = importlib.import_module("main")
+        builder = getattr(module, "build_clock_in_payload", None)
+        self.assertIsNotNone(builder)
+        init_data = {
+            "paramsData": {
+                "FStartTime": "21:30",
+                "FEndTime": "23:59",
+                "FLateTime": "23:00",
+            },
+            "schoolData": [
+                {"ID": "2", "FName": "旗山校区", "FPosition": '{"range": []}'},
+            ],
+            "userData": {"FDefaultCampus": "2", "FCollUnit": 7, "FWay": 1},
+        }
+        payload = builder(
+            init_data,
+            latitude=26.05,
+            longitude=119.19,
+            address="测试地址",
+            server_timestamp=1788379200000,
+            ca_is_no="0",
+            matched_campus={"id": "matched-9", "title": "匹配校区"},
+        )
+        self.assertEqual(
+            list(payload),
+            [
+                "campus",
+                "lon",
+                "lat",
+                "startTime",
+                "endTime",
+                "actualLocation",
+                "caIsNo",
+                "collUnit",
+                "way",
+                "isLate",
+            ],
+        )
+        self.assertEqual(payload["campus"], "matched-9")
+        self.assertEqual(payload["lon"], 119.19)
+        self.assertEqual(payload["lat"], 26.05)
+        self.assertEqual(payload["actualLocation"], "匹配校区 测试地址")
+        self.assertEqual(payload["collUnit"], 7)
+        self.assertEqual(payload["way"], 1)
+        self.assertEqual(payload["isLate"], 0)
+
     def test_renders_nested_body_and_headers_from_json_context(self):
         config = {
             "request": {
@@ -97,6 +148,20 @@ class RootConfigTests(unittest.TestCase):
         if not local_data.exists() or local_data.stat().st_size <= 2:
             self.skipTest("local data.json template is not present")
         self.assertEqual(default_config_path(), local_data)
+
+    def test_local_data_template_contains_confirmed_clock_in_protocol_shape(self):
+        local_data = PROJECT_ROOT / "data.json"
+        if not local_data.exists() or local_data.stat().st_size <= 2:
+            self.skipTest("local data.json template is not present")
+        config = load_config(local_data)
+        self.assertEqual(config["request"]["method"], "GET")
+        self.assertEqual(config["request"]["url"], "https://yzsxg.fzu.edu.cn/livecloud/project/fzu/attn/clockIn.action")
+        self.assertIsNone(config["request"]["body"])
+        self.assertEqual(
+            config["request"]["protocol"]["clock_in"]["encrypted_fields"],
+            ["campus", "lon", "lat", "startTime", "endTime", "actualLocation", "caIsNo", "collUnit", "way", "isLate"],
+        )
+        self.assertFalse(config["request"]["enabled"])
 
     def test_root_config_separates_confirmed_urls_and_capture_fields(self):
         config = load_config(PROJECT_ROOT / "late_rollcall_config.json")

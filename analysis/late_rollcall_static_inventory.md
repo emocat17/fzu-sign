@@ -267,4 +267,4 @@ status, attnData, resultData, errorMsg, createTime
 
 - `init.action` 和 `currentTimestamp.action` 已使用当前会话做只读探测，均返回 HTTP 200；仅记录字段结构，不记录响应值。
 - 当前账号当天已经显示签到成功，未调用 `check.action` 或 `clockIn.action`，没有重复提交。
-- 真实脚本可以先实现 `init`、服务端时间、范围校验和加密参数的 dry-run；最终 `clockIn.action` 需要保持显式开关和真实定位约束。
+- 根目录 `main.py` 已实现 `init`、服务端时间、范围校验和加密参数的 dry-run；最终 `clockIn.action` 保持 JSON 开关、命令行开关和运行时确认，并要求真实定位字段。

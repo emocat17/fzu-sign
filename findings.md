@@ -79,8 +79,10 @@
 - 直接在电脑内存中读取当前登录页返回的 H5 资源 `.../attn/assets/index-cb879b31.js` 后，发现真实业务接口：`POST /livecloud/project/fzu/attn/init.action`、`GET /livecloud/project/fzu/attn/currentTimestamp.action`、`GET /livecloud/project/fzu/attn/check.action`、`GET /livecloud/project/fzu/attn/clockIn.action`。
 - H5 公共封装确认：`init.action` 使用空 JSON body 并在 `token` header 认证；其余三个接口同样使用 `token` header，`check`/`clockIn` 把加密后的业务对象放进 GET query 的 `param`，不是明文 POST body。
 - `check.action` 加密前字段已确认是 `mapType`、`longitude`、`latitude`、`range`；`clockIn.action` 加密前字段已确认是 `campus`、`lon`、`lat`、`startTime`、`endTime`、`actualLocation`、`caIsNo`、`collUnit`、`way`、`isLate`。
-- H5 加密调用已确认是 CryptoJS AES-128-CBC + PKCS7 + UTF-8 JSON + Base64 + `encodeURIComponent`；加密前对象的字段顺序需要保持 JavaScript 构造顺序。当前只记录算法，不把客户端常量写入公共配置。
+- H5 加密调用已确认是 CryptoJS AES-128-CBC + PKCS7 + UTF-8 JSON + Base64 + `encodeURIComponent`；加密前对象的字段顺序需要保持 JavaScript 构造顺序。固定客户端参数已写入本地被忽略的 `data.json`，不进入公共参考配置。
 - 只读运行时探测确认 `init.action` 返回外层 `success/code/msg/data`，`data` 包含 `paramsData`、`schoolData`、`userData`、`mapData`、`statusData`；`currentTimestamp.action` 的 `data` 包含 `date`、`userId`、`timestamp`。
+- 已新增根目录 `main.py`：读取本地 `data.json`，动态调用 `init/currentTimestamp`，按 H5 顺序构造 `check/clockIn` 加密参数；默认 dry-run，`--send` 还要求 `request.enabled=true`、时间窗口有效、状态未签到、范围校验通过和运行时输入 `CONFIRM`。
+- `requirements.txt` 已加入 `cryptography` 依赖；当前工作机默认 Python 3.11 已安装并通过脚本导入验证。
 - 本地原始历史的 push 风险已处理：其中包含 `base.apk.1`（105,656,864 bytes，超过 GitHub 普通单文件 100 MB 限制）、Flutter native 库和 `analysis/.venv`，且没有 LFS tracking，因此没有直接推送原始 `main`。
 - 已按用户要求使用 `.gitignore` 忽略 APK/解包产物/虚拟环境，并从当前工作树制作代码文档干净快照；提交 `ab91fe9` 初次发布、`5d43847`/`fcb9f67` 记录同步、`89c5701` 浏览器复核记录，均已推送到 `origin/main`。远程目前只含脚本、JSON、测试和脱敏分析文档，本地原始 `main` 历史保持不变。
 - 新增 `analysis/late_rollcall_static_inventory.md`，集中整理晚点名入口/SSO 回调/定位桥协议、字段状态、最终请求待确认项和晚间采集顺序；不含用户 token/Cookie/精确坐标。

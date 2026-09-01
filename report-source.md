@@ -106,7 +106,7 @@ Base64 ciphertext
 encodeURIComponent(param)
 ```
 
-客户端代码中存在固定的 AES key/IV 常量，但它们不写入本地 `data.json`；配置文件只保留占位符，避免把加密实现细节误当成账号凭证。脚本实现时必须保持 JavaScript 的对象字段顺序和 UTF-8 JSON 序列化行为一致。
+客户端代码中存在固定的 AES key/IV 常量；它们已写入本机且被 `.gitignore` 排除的 `data.json`，但不写入公共参考配置。脚本实现时必须保持 JavaScript 的对象字段顺序和 UTF-8 JSON 序列化行为一致。
 
 ## 页面与设备证据
 
@@ -152,3 +152,19 @@ mitmproxy 官方也说明，Android 应用可能绕过系统代理，且应用�
 | 项目 APK AOT/DEX | 解释服务目录和原生桥 | 高置信；最终 H5 业务不在 APK 内 |
 | Android 官方文档 | 解释 Network Inspector、WebView 调试和用户 CA 行为 | 一手技术资料 |
 | mitmproxy 官方文档 | 解释系统代理绕过和证书限制 | 一手工具资料 |
+
+## 当前脚本实现
+
+根目录 `main.py` 已实现以下流程：
+
+```text
+读取 data.json
+→ 只读 init.action
+→ 只读 currentTimestamp.action
+→ 动态构造 clockIn 前置对象
+→ 默认输出脱敏协议预览
+→ --send 时先执行 check.action
+→ 运行时输入 CONFIRM 后才调用 clockIn.action
+```
+
+`data.json` 保持 `request.enabled=false`。脚本会在服务端状态已经是成功/处理中或当前时间不在服务端窗口时停止，不重复提交；它不提供坐标改写、时间绕过或设备校验绕过功能。
