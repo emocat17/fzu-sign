@@ -153,16 +153,18 @@ appToken, loginToken, accountToken, deviceToken
 ### 4.3 最终签到 HTTP 请求目前仍需动态确认
 
 ```text
-最终提交 URL       UNCONFIRMED
-HTTP 方法          UNCONFIRMED
-Content-Type       UNCONFIRMED（可能是 JSON 或 form）
-实际 body 键       UNCONFIRMED
-token/Cookie 头    UNCONFIRMED（入口流程已确认 SSO Cookie）
-签名/加密          UNCONFIRMED
-服务端时间校验     UNCONFIRMED
-服务端定位校验     UNCONFIRMED
-设备/UA 校验       UNCONFIRMED
+最终提交 URL       CONFIRMED: /livecloud/project/fzu/attn/clockIn.action
+HTTP 方法          CONFIRMED: GET
+Content-Type       CONFIRMED: 业务数据不在 body，位于 query.param
+实际业务键         CONFIRMED: campus, lon, lat, startTime, endTime, actualLocation, caIsNo, collUnit, way, isLate
+token 头           CONFIRMED: Header token=<页面运行时 token>
+签名/加密          CONFIRMED: AES-128-CBC/PKCS7 + Base64 + encodeURIComponent
+服务端时间校验     部分确认：页面调用 currentTimestamp.action 并计算 isLate；服务端规则仍未知
+服务端定位校验     部分确认：页面先调用 check.action；最终服务端规则仍未知
+设备/UA 校验       未确认
 ```
+
+这里的“CONFIRMED”来自当前登录 H5 JavaScript 调用点和只读 `init/currentTimestamp` 探测；没有调用最终 `clockIn.action`，因此未产生新的签到状态。
 
 ## 5. 晚间动态采集顺序
 
@@ -184,3 +186,85 @@ token/Cookie 头    UNCONFIRMED（入口流程已确认 SSO Cookie）
 - `identity`/`location`/`service`：只填动态请求实际需要的字段。
 - `request.url`、`request.method`、`request.headers`、`request.body`、`request.body_encoding`：只填最终采集确认的请求。
 - `request.enabled` 默认 `false`；确认请求并完成审阅后才可改为 `true`，再用 `--send`。
+
+## 7. 当前 H5 已确认的真实接口（2026-09-01）
+
+直接读取当前登录页面返回的 H5 资源后，确认接口不在 APK 内，而在：
+
+`https://yzsxg.fzu.edu.cn/plug-in/livecloud/project/fzu/attn/assets/index-cb879b31.js`
+
+### 7.1 接口表
+
+| 接口 | 方法 | 认证/参数 | 用途 |
+|------|------|----------|------|
+| `/livecloud/project/fzu/attn/init.action` | POST | Header `token`；body `{}` | 获取计划、校区范围、用户/组织字段和当前状态 |
+| `/livecloud/project/fzu/attn/currentTimestamp.action` | GET | Header `token` | 获取服务端时间 |
+| `/livecloud/project/fzu/attn/check.action` | GET | Header `token`；query `param` | 校验当前定位是否匹配签到范围 |
+| `/livecloud/project/fzu/attn/clockIn.action` | GET | Header `token`；query `param` | 提交签到 |
+
+`contextPath` 为空时，以上路径直接拼接到 `https://yzsxg.fzu.edu.cn`。
+
+### 7.2 `check.action` 加密前字段
+
+```json
+{
+  "mapType": "amap",
+  "longitude": "<当前真实经度>",
+  "latitude": "<当前真实纬度>",
+  "range": "<JSON.stringify(schoolPosition)>"
+}
+```
+
+其中 `schoolPosition` 由 `init.action` 返回的 `schoolData[*].FPosition` 解析并合并得到；返回数组首项用于确定匹配校区。
+
+### 7.3 `clockIn.action` 加密前字段
+
+```json
+{
+  "campus": "<匹配校区 ID>",
+  "lon": "<当前真实经度>",
+  "lat": "<当前真实纬度>",
+  "startTime": "<paramsData.FStartTime>",
+  "endTime": "<paramsData.FEndTime>",
+  "actualLocation": "<匹配校区标题 + 地址>",
+  "caIsNo": "<URL 参数 FCaIsNo，不存在时为 0>",
+  "collUnit": "<userData.FCollUnit>",
+  "way": "<userData.FWay>",
+  "isLate": "<按服务端时间和 FLateTime 计算的 0/1>"
+}
+```
+
+传输形式不是明文 body，而是：
+
+```text
+param = encodeURIComponent(Encrypt(JSON.stringify(object)))
+```
+
+当前 H5 代码使用 CryptoJS AES-128-CBC、PKCS7、UTF-8 和 Base64；`request.body` 因此保持为空，真正数据位于 GET query 的 `param`。
+
+### 7.4 `init.action` 返回字段
+
+真实只读探测返回的 `data` 对象包含：
+
+```text
+paramsData, schoolData, userData, mapData, statusData
+```
+
+页面映射出的关键字段为：
+
+```text
+FToday, FStartTime, FEndTime, FLateTime, FTips,
+FErrorTips, FAppTips, FScopeTips, FListTips, FTimeTips, FNotInTips,
+FClass, FCollUnit, FWay, FDefaultCampus, FName, FCheckInTime,
+FCampusShow, FState, FActualLocation, FPlanID, UserId,
+FPosition, ID, FName, mapType, mapKey, mapSecret,
+status, attnData, resultData, errorMsg, createTime
+```
+
+这些字段中，`paramsData`/`userData`/`schoolData` 的值应从当前账号当前日期的 `init.action` 返回中动态读取，不能写死为示例值。
+
+### 7.5 结果与下一步
+
+- `init.action` 和 `currentTimestamp.action` 已使用当前会话做只读探测，均返回 HTTP 200；仅记录字段结构，不记录响应值。
+- 当前账号当天已经显示签到成功，未调用 `check.action` 或 `clockIn.action`，没有重复提交。
+- 真实脚本可以先实现 `init`、服务端时间、范围校验和加密参数的 dry-run；最终 `clockIn.action` 需要保持显式开关和真实定位约束。

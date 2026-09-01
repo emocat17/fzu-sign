@@ -26,6 +26,7 @@
 | 2 | 用户提供，时间待确认 | 来源未核实的辅助请求 | 观察用户提交的抓包文本 | `http://<redacted-ip>:8080/?tk=<redacted>&iv=<redacted>&encrypt=17` | POST | `Q-UA2`、`Q-GUID`、`QQ-S-ZIP`、`Accept`、`User-Agent`、`Content-Type`、`Host` 等 | Body 未提供；`Content-Length=224`；请求体疑似不透明/加密数据 | 待确认 | 排除为晚点名业务候选：目标不是福大域名，头部带 QQ SDK/设备标识，未出现签到或定位字段 |
 | 3 | 2026-09-01 21:41 后 | 实体 App `1.17.3` | 从“业务/我的服务”打开晚点名 | `https://yzsxg.fzu.edu.cn/livecloud/project/fzu/attn/...` | 页面导航 | App 日志出现 WebView 导航与定位权限桥；不记录值 | 页面显示已有“签到成功”，时间早于本次调试；未点击提交 | 已确认 | 设备实际版本与项目 APK `1.17.0` 不同；本次没有重复签到 |
 | 4 | 2026-09-01 23:00 后 | 电脑代理验证 | 设备临时代理指向电脑 mitmproxy | `https://yzsxg.fzu.edu.cn/...` | HTTPS | 仅记录元数据 | WebView 日志：`Trust anchor for certification path not found`、SSL handshake failed；安全捕获日志无设备事件 | 排除当前代理路径 | release Flutter/WebView 不信任用户 CA，或存在证书固定；未继续绕过 |
+| 5 | 2026-09-01 | 当前登录 H5 JS | 直接读取页面资源并分析调用点 | `https://yzsxg.fzu.edu.cn/plug-in/livecloud/project/fzu/attn/assets/index-cb879b31.js` | POST/GET | `token` header（不记录值） | `init` 返回对象结构已确认；`clockIn` 前置字段和 `param` 加密包装已确认 | 已确认 | 不调用 `clockIn.action`，不产生新的签到状态 |
 
 ## 定位桥记录
 
@@ -61,6 +62,15 @@
 - 通过 ADB 授予精确/粗略定位后，App 日志出现页面到 `native/permission` 定位权限桥的调用；页面随后显示已有签到成功状态。本次没有点击签到按钮。
 - mitmproxy 在电脑端可独立捕获福大域名的只读请求，但设备 WebView 经过代理时出现证书信任链错误，未产生可用的页面流量记录。
 - 设备代理已关闭并恢复为原状态；代理 CA 文件只保留在本地测试目录，后续应在不再需要时从设备用户证书中移除。
+
+## 2026-09-01 H5 源码与只读接口探测
+
+- 页面资源直接返回 `200`，当前 JS 资产包含 `init.action`、`currentTimestamp.action`、`check.action`、`clockIn.action` 四个接口调用。
+- `init.action` 只读探测返回 `success/code/msg/data` 外层结构；`data` 含 `paramsData`、`schoolData`、`userData`、`mapData`、`statusData`。
+- `currentTimestamp.action` 只读探测返回 `data.date`、`data.userId`、`data.timestamp`。
+- `check.action` 的加密前对象键为 `mapType`、`longitude`、`latitude`、`range`；`clockIn.action` 的加密前对象键为 `campus`、`lon`、`lat`、`startTime`、`endTime`、`actualLocation`、`caIsNo`、`collUnit`、`way`、`isLate`。
+- 两个业务对象都通过 GET query 的 `param` 发送，客户端先执行 AES-128-CBC/PKCS7/UTF-8 JSON/Base64/URL 编码。
+- 本次没有向 `check.action` 或 `clockIn.action` 发送请求，没有使用或记录精确定位值。
 
 ## 2026-09-01 用户抓包排除项
 

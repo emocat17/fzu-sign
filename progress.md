@@ -98,6 +98,9 @@
   - 通过实体设备 ADB 检查并授予定位权限，确认设备 App 为 `1.17.3`，实际页面显示既有签到成功状态；未重复提交。
   - 在电脑安装 mitmproxy 并验证本机福大域名捕获；设备 WebView 代理后报证书信任链错误且无设备事件，已关闭设备代理并保留失败证据。
   - 拉取设备 `1.17.3` APK 到忽略目录并用 JADX 1.5.6 反编译；Java 层仍为 Flutter 壳，`network_security_config` 只允许明文，未开启 WebView 调试。
+  - 通过当前登录页面直接读取远程 H5 JS，确认 `init.action`、`currentTimestamp.action`、`check.action`、`clockIn.action` 四个接口及其 HTTP 方法。
+  - 只读调用 `init.action` 和 `currentTimestamp.action` 均返回 200，恢复真实响应对象结构；未调用范围校验或最终签到接口。
+  - 还原 `clockIn.action` 加密前 10 字段和统一 `param` query 包装；补充 AES-CBC/PKCS7/UTF-8/Base64/URL 编码协议说明。
 
 ### Phase 6: 远程仓库同步
 - **Status:** complete

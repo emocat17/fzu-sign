@@ -69,13 +69,18 @@
 - 官方客户端的 SSO WebView 在加载页面前设置 `sso.fzu.edu.cn` Cookie，并开启 Android `geolocationEnabled`；这说明不能只靠在请求体中填经纬度修复页面桥接错误。
 - 官方 SSO 代码进一步给出正常登录流程字段（仅作协议学习/配置说明）：初始 GET `/login` 获取 `SESSION`、动态 `login-croypto` 和 `login-page-flowkey`；用户名密码 POST 字段为 `username`、`type=UsernamePassword`、`_eventId=submit`、`geolocation`、`execution`、`captcha_code`、`croypto`、AES-ECB/PKCS7+Base64 后的 `password`、`captcha_payload`，成功后从 `Set-Cookie` 取得 `SOURCEID_TGC`。这不是绕过认证，且动态 CAPTCHA/短信二次验证仍可能需要人工完成。
 - 官方 SSO 二次验证字段为短信接口 JSON `businessNo=0008, phone`，校验接口 JSON `phone, token, delete=false, trustDevice=false`；脚本暂不自动发送短信或处理 CAPTCHA。
-- 根目录交付配置已把 `https://yzsxg.fzu.edu.cn/livecloud/project/fzu/attn/oauth2/authorize.action` 标为晚点名入口 URL，并记录 SSO Cookie 域、callback URL、应用 User-Agent；最终签到提交 URL/body 仍保持 `needs_capture_confirmation`，不会用候选字段冒充真实协议。
+- 根目录交付配置已把 `https://yzsxg.fzu.edu.cn/livecloud/project/fzu/attn/oauth2/authorize.action` 标为晚点名入口 URL，并记录 SSO Cookie 域、callback URL、应用 User-Agent；最终 `clockIn.action` 的 URL、GET 方法、加密 query.param 和 10 个加密前业务字段已由当前 H5 JS 确认，但默认仍不发送。
 - `late_rollcall_checkin.py` 支持 JSON/form/raw 请求体、`${section.field}` 替换、请求/查询参数脱敏、回环 HTTP 错误测试和 `--send` 双重开关；`late_rollcall_config.json` 默认 `request.enabled=false` 且 body 为空。
 - 已生成本地忽略文件 `data.json` 的最小占位模板：只保留 App/入口、SSO 会话、定位和最终请求配置；敏感值统一为 `XXXXX`，`request.body` 保持为空，最终请求字段以晚间实际捕获结果为准。
 - `late_rollcall_checkin.py` 现在优先读取有内容的本地 `data.json`，不存在或为空时回退到仓库中的 `late_rollcall_config.json`；`.env` 和 `data.json` 均由 `.gitignore` 排除。
 - 实体设备运行的智汇福大包是 `1.17.3` / versionCode `26042401`，与项目原始 APK `1.17.0` 不同；设备包 SHA-256 只保留在本地分析结果，不进入发布仓库。
 - 实体 App 在定位权限授予后通过 WebView 日志确认了 `native/permission` 定位权限桥；当前页面显示的是此前已经存在的“签到成功”状态，本次没有点击最终签到。
 - 电脑 mitmproxy 本身可以捕获福大域名的只读请求，但设备 WebView 经过代理时报 `Trust anchor for certification path not found` / SSL handshake failed，且没有产生设备端安全元数据；这条路径未能取得最终签到 body，不继续绕过证书校验。
+- 直接在电脑内存中读取当前登录页返回的 H5 资源 `.../attn/assets/index-cb879b31.js` 后，发现真实业务接口：`POST /livecloud/project/fzu/attn/init.action`、`GET /livecloud/project/fzu/attn/currentTimestamp.action`、`GET /livecloud/project/fzu/attn/check.action`、`GET /livecloud/project/fzu/attn/clockIn.action`。
+- H5 公共封装确认：`init.action` 使用空 JSON body 并在 `token` header 认证；其余三个接口同样使用 `token` header，`check`/`clockIn` 把加密后的业务对象放进 GET query 的 `param`，不是明文 POST body。
+- `check.action` 加密前字段已确认是 `mapType`、`longitude`、`latitude`、`range`；`clockIn.action` 加密前字段已确认是 `campus`、`lon`、`lat`、`startTime`、`endTime`、`actualLocation`、`caIsNo`、`collUnit`、`way`、`isLate`。
+- H5 加密调用已确认是 CryptoJS AES-128-CBC + PKCS7 + UTF-8 JSON + Base64 + `encodeURIComponent`；加密前对象的字段顺序需要保持 JavaScript 构造顺序。当前只记录算法，不把客户端常量写入公共配置。
+- 只读运行时探测确认 `init.action` 返回外层 `success/code/msg/data`，`data` 包含 `paramsData`、`schoolData`、`userData`、`mapData`、`statusData`；`currentTimestamp.action` 的 `data` 包含 `date`、`userId`、`timestamp`。
 - 本地原始历史的 push 风险已处理：其中包含 `base.apk.1`（105,656,864 bytes，超过 GitHub 普通单文件 100 MB 限制）、Flutter native 库和 `analysis/.venv`，且没有 LFS tracking，因此没有直接推送原始 `main`。
 - 已按用户要求使用 `.gitignore` 忽略 APK/解包产物/虚拟环境，并从当前工作树制作代码文档干净快照；提交 `ab91fe9` 初次发布、`5d43847`/`fcb9f67` 记录同步、`89c5701` 浏览器复核记录，均已推送到 `origin/main`。远程目前只含脚本、JSON、测试和脱敏分析文档，本地原始 `main` 历史保持不变。
 - 新增 `analysis/late_rollcall_static_inventory.md`，集中整理晚点名入口/SSO 回调/定位桥协议、字段状态、最终请求待确认项和晚间采集顺序；不含用户 token/Cookie/精确坐标。
