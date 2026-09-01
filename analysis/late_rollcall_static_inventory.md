@@ -51,6 +51,71 @@
 
 失败/拒绝时，回调可能是空 `lon`/`lat` 和空地址。普通 Chrome 没有 `window.ReactNativeWebView` 或智汇福大原生协议处理器，因此会出现“无法调用智汇福大APP的定位服务”。浏览器开发者工具的经纬度覆盖不能自动补上这个原生桥。
 
+### 3.1 当前 APK 的 AOT 还原细节
+
+完整 Blutter 分析确认当前 Flutter APK 的协议链如下：
+
+```text
+native/location
+  -> KYAppVendorServiceSchemeLocationProcessor.process
+  -> KYAbilityMapUtil.getLocation(option)
+  -> AMapFlutterLocation.onLocationChanged
+  -> 读取 latitude/longitude/address 等原生结果
+  -> 组织 lat/lon/city 等 Map
+  -> WebViewController.runJavaScript(function(JSON))
+```
+
+当前 APK 读取到的原生定位键包括：
+
+```text
+latitude, longitude, address, city, country, province,
+district, street, streetNumber, cityCode, description
+```
+
+处理器把坐标解析后写入 `lat`、`lon`；定位失败时使用 `-2` 哨兵值。`native/userauth` 另有 `function`、`authType=2` 和 App token 回调链。它们都是 App/WebView 桥字段，不能据此推导晚点名服务的最终 HTTP body。
+
+完整 AOT 输出没有发现 `attn`、`livecloud`、`oauth2` 或签到专属 Request 类；`trackSignIn` 只属于登录行为统计。因此最终签到请求仍必须在远程 H5 的有效页面状态下动态确认。
+
+### 3.2 AOT 实现锚点与定位选项
+
+以下地址是本次针对当前 APK `libapp.so` 的 AOT 输出地址，用于复核分析结果，不是运行时 HTTP URL：
+
+| AOT 符号/方法 | 地址 | 已确认行为 |
+|--------------|------|------------|
+| `KYAbilityMapUtil::getLocation` | `0xb61884` | 创建定位配置、监听高德事件、整理结果 Map 并返回 Future |
+| `KYAppVendorServiceSchemeLocationProcessor::process` | `0x110baa0` | 读取 `function`，调用定位能力，再用 `runJavaScript(function(JSON))` 回传页面 |
+| `_setLocationOption` | `0x110c110` | 设置当前 APK 的高精度定位参数 |
+
+当前 APK 的 `AMapLocationOption.getOptionsMap` 会序列化这些配置键：
+
+```text
+locationInterval
+needAddress
+locationMode
+geoLanguage
+onceLocation
+pausesLocationUpdatesAutomatically
+desiredAccuracy
+distanceFilter
+locationAccuracyAuthorizationMode
+fullAccuracyPurposeKey
+```
+
+当前实现观察到的主要值是 `needAddress=true`、高精度/导航级精度、`locationInterval=2000`、完整精度授权；随后通过 Flutter MethodChannel 调用 `startLocation`，结果来自 `onLocationChanged` EventChannel。这里没有发现“把任意经纬度写入请求体即可绕过定位”的代码路径；坐标伪造、时间绕过或设备校验绕过不属于本分析脚本的实现范围。
+
+### 3.3 通用服务目录请求（不是签到提交）
+
+完整 AOT 还原出的目录请求仅用于找到服务项或其远程 URL：
+
+```text
+GET /operation/service/app/v1/getMyHomeService
+GET /operation/service/app/v1/getServiceListByGroupType?groupType=<type>
+GET <分类详情路径>?groupId=<id>
+GET /auth/develop/app/v1/getAppUrlById?appId=<id>
+```
+
+分页列表还会使用 `pageNumber`、`numPerPage`。这些请求能解释“我的服务”如何打开远程页面，但没有恢复出晚点名的最终 POST/JSON/form body。
+
 ## 4. 字段状态
 
 ### 4.1 入口/认证流程中确认或高置信的字段
@@ -69,6 +134,9 @@
 | `type=location` | 定位协议业务类型 |
 | `lon`/`lat` | 定位回调坐标键；是否原样进入签到提交体，待动态请求确认 |
 | `address`/`formattedAddress` | 定位回调地址键；是否进入签到提交体，待动态请求确认 |
+| 当前 APK 原生结果 | `latitude`/`longitude`/`address`/`city` 等 | App 内部 AMap 结果；不是已确认签到 body |
+| 当前 APK WebView 回调 | `lat`/`lon`/`city` 等 | `native/location` 处理器组织的回调 Map；不是已确认签到 body |
+| `native/userauth` | `function`、`authType=2` | 服务页原生授权桥；不是签到提交字段 |
 
 ### 4.2 APK/服务目录观察到的字段名
 
@@ -104,6 +172,8 @@ token/Cookie 头    UNCONFIRMED（入口流程已确认 SSO Cookie）
 4. 在最终提交前暂停，确认是否允许产生一次真实签到状态变更。
 5. 采集最终请求的 URL、方法、Content-Type、body 键和字段类型；把凭证值替换为 `${auth.cookie}` 等占位符。
 6. 将确认后的内容写入根目录 `late_rollcall_config.json` 的 `request` 部分，删除未出现的候选字段。
+
+静态 AOT 结果只能补齐“定位桥和服务目录链”，不能替代第 4、5 步的 H5 请求确认；尤其不能把 `lat`/`lon`、`userId` 或 `appToken` 猜测成最终提交字段。
 
 ## 6. 根目录脚本配置位置
 

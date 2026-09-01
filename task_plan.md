@@ -4,7 +4,7 @@
 从当前目录的 APK 中定位“我的服务 → 晚点名签到”对应的请求路径、请求字段、认证/签名要求，并整理成可配置、可审计、仅面向自有账号或测试环境的 Python 复现脚本。
 
 ## Current Phase
-Phase 5
+Phase 5（动态采集待有效时段；静态 AOT 还原已完成）
 
 ## Phases
 
@@ -34,12 +34,12 @@ Phase 5
 - [ ] 记录脱敏后的入口/重定向、请求方法/URL/headers 名称/body 字段类型/响应状态
 - [ ] 区分页面定位回调、SSO 会话和最终签到提交请求
 - [ ] 仅在用户临近真实提交且明确确认后观察提交结果
-- [ ] **Status:** pending（已建立采集记录模板）
+- [ ] **Status:** pending（已建立采集记录模板；静态 AOT 还原已完成，待有效时段采集远程 H5 最终请求）
 
 ### Phase 6: 远程仓库同步
 - [x] 确认远程仓库不接收 APK/解包产物，采用只推送代码、配置和脱敏文档
 - [x] 在保留本地原始历史的前提下创建独立干净提交并推送 `origin/main`
-- [x] **Status:** complete（远程提交 `ab91fe9`，已复核无 APK/解包产物）
+- [x] **Status:** complete（远程最新提交含 AOT 分析记录，已复核无 APK/解包产物）
 
 ## Key Questions
 1. APK 中“晚点名签到”实际使用哪个 Activity/Service/API？

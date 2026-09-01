@@ -49,6 +49,14 @@
 - 已在 `analysis/.venv` 安装 `requests` 2.34.2 与 `pyelftools` 0.33，Blutter 的 Dart 探测成功返回 `2.19.6`、compressed-pointers、null-safety 等 flags。
 - Chocolatey 的 CMake MSI 安装仍有 `msiexec` 进程，CMake 尚未进入 PATH；Ninja 已可用。
 - Blutter 环境初始化已成功下载 ICU/Capstone；随后用项目虚拟环境识别出 Dart `2.19.6`，但构建阶段因本机 Windows SDK 未安装（`WindowsSDKVersion`/`WindowsSdkDir` 为空，CMake 找不到 C/C++ 编译器）在配置阶段停止，未生成 AOT 对象池或汇编输出；当前 AOT 结论仍以字符串/访问器清单为准。
+- 改用 Docker/Linux 工具链后，Blutter 完整代码分析成功：已导出 `objs.txt`、`pp.txt`、`asm/` 和 Frida 模板。完整输出中的 Dart 版本、snapshot hash 与 APK 一致，说明这次对象池/汇编还原针对的是当前 APK，而不是示例包。
+- 完整 AOT 还原确认当前 APK 注册了 `native/location`、`native/userauth` 等服务页协议；`KYAppVendorServiceSchemeLocationProcessor::process` 调用 `KYAbilityMapUtil::getLocation`，再通过 WebView `runJavaScript` 把结果回传页面。
+- 当前 APK 的 `KYAbilityMapUtil::getLocation` 返回 `Future<Map<String, dynamic>>`：先创建 `AMapLocationOption`，默认 `needAddress=true`、高精度/导航级精度、`locationInterval=2000`，监听 `AMapFlutterLocation.onLocationChanged`，收到首个结果后停止定位。
+- 定位结果映射已从 AOT 代码确认：原生高德结果的 `latitude`/`longitude` 被解析为 `lat`/`lon`（失败哨兵值为 `-2`），同时保留 `address`、`city`、`country`、`province`、`district`、`street`、`streetNumber`、`cityCode`、`description` 等键；这些是 App→WebView 定位回调数据，不是已确认的签到 HTTP body。
+- `native/userauth` 处理器读取 `function` 和 `authType`，只接受 `authType=2`，刷新 App token 后向 WebView 注入回调；这是服务页取原生用户授权信息的桥，不等于晚点名提交接口。
+- 服务目录 Request 的完整 AOT 方法已恢复：我的服务列表是 GET `/operation/service/app/v1/getMyHomeService`（无查询参数）；分类列表是 GET `/operation/service/app/v1/getServiceListByGroupType?groupType=<type>`；分类详情使用 `groupId` 查询参数；服务 URL 详情使用 `/auth/develop/app/v1/getAppUrlById?appId=<id>`，响应对象包含 `title`/`url`；分页我的服务列表使用 `pageNumber`/`numPerPage`。
+- `trackSignIn`/`signIn` 已排除为晚点名签到：AOT 调用链是登录成功后的 `recordLoginEvent`→`postTracker`，并非服务页提交；服务目录相关 Request 也只有 GET，未发现签到专属 POST。
+- 对完整 Blutter 输出检索 `attn`/`livecloud`/`oauth2` 没有命中生产入口（仅有无关的键盘字符串 `Attn`），因此晚点名 H5/最终接口仍由远程服务下发，无法从当前 APK 离线恢复。
 - 对三个唯一字符串做公开源码/文档检索没有结果；没有可引用的公开协议可替代自有账号抓包。
 - 进一步公开检索发现福州大学西二在线的官方开源仓库 `west2-online/fzuhelper-app`，其 App Store/项目描述明确包含“晚点名签到”功能；该仓库是一个独立 React Native 客户端，可能提供同一业务的可读实现，待与当前 Flutter APK 的版本/服务端区分。
 - 官方仓库 `west2-online/fzuhelper-app` 的工具箱源码直接给出“晚点名签到” URL：`https://yzsxg.fzu.edu.cn/livecloud/project/fzu/attn/oauth2/authorize.action`，类型为 WebView，且标记 `sso: true`。该仓库同时使用 `kysk-fdxy-app` scheme，与当前 APK 资源中的 scheme 一致，故这是目前最高置信的晚点名入口 URL；仍需确认当前 APK 版本是否使用同一后端。

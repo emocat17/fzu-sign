@@ -87,7 +87,11 @@
   - 建立 `analysis/evening_capture_log.md`，规定脱敏记录格式和提交前确认点。
 - Files created/modified:
   - `analysis/evening_capture_log.md`
-  - Blutter 初始化成功，但 AOT 构建因 Windows SDK 缺失停在 CMake 配置阶段；已记录错误并保留字符串/访问器静态结论。
+  - Blutter 初始化成功；Windows 原生构建因 Windows SDK 缺失停在 CMake 配置阶段，随后改用 Docker/Linux 工具链完成当前 APK 的完整 AOT 还原。
+  - 完整 AOT 输出已导出 `objs.txt`、`pp.txt`、`asm/` 和 Frida 模板；Dart 版本与 snapshot hash 均与当前 APK 一致。
+  - 还原 `native/location` → `KYAbilityMapUtil.getLocation` → 高德定位回调 → `lat`/`lon`/`city` → WebView `runJavaScript` 的调用链；确认定位字段是 App/WebView 桥数据，不是最终签到 body。
+  - 还原通用“我的服务”目录请求的 GET 路径及查询字段；`trackSignIn`/`signIn` 归类为登录行为统计，不是晚点名提交。
+  - 完整 AOT 输出未发现 `attn`、`livecloud`、`oauth2` 或签到专属 Request 类，确认最终 H5 请求仍需有效页面运行时采集。
   - Chrome 中找到用户的登录标签页，但可见 DOM/网络能力暂时无响应；未刷新页面、未点击签到、未传输敏感数据。
 
 ### Phase 6: 远程仓库同步
@@ -96,7 +100,7 @@
   - `.gitignore` 增加 APK、解包目录、虚拟环境和本地抓包文件规则。
   - 远程仓库使用无 APK 的独立根提交，避免把本地历史中的超限二进制上传。
   - 推送后复核 `origin/main` 文件清单，仅包含脚本、JSON、测试和脱敏文档。
-- Remote commits: `ab91fe9` (initial clean publication), `5d43847`/`fcb9f67` (analysis record synchronization), `89c5701` (browser inspection record)
+- Remote commits: `ab91fe9` (initial clean publication), `5d43847`/`fcb9f67` (analysis record synchronization), `89c5701` (browser inspection record), `af0e64f` (AOT analysis references)
 
 ## Test Results
 | Test | Input | Expected | Actual | Status |
@@ -123,13 +127,14 @@
 | 2026-09-01 | Blutter Dart 探测缺少 Python `requests` | 1 | 记录依赖缺口，改用项目虚拟环境 |
 | 2026-09-01 | Blutter CMake 配置找不到 C/C++ 编译器 | 1 | 确认本机 Windows SDK 环境变量为空，记录为 AOT 构建阻塞；不影响字符串/访问器静态分析 |
 | 2026-09-01 | 资源查询器导入 `parse_arsc` 触发顶层循环并 GBK 编码中断 | 1 | 加主程序保护并使用安全 stdout |
+| 2026-09-01 | Windows Blutter 构建受 Windows SDK 阻塞 | 1 | 在 Docker/Linux 中使用同一 Dart 2.19.6 工具链完成完整 AOT 还原，并核对当前 APK snapshot hash |
 
 
 ## 5-Question Reboot Check
 | Question | Answer |
 |----------|--------|
-| Where am I? | Phase 5 in progress; Phase 6 remote publication complete |
+| Where am I? | Phase 5 in progress; Phase 6 remote publication complete；APK AOT 静态还原已完成 |
 | Where am I going? | 交付已确认入口与配置模板；真实提交 URL/body 需自有账号抓包后填入 |
 | What's the goal? | 解析“晚点名签到”接口字段与安全复现方式 |
-| What have I learned? | 晚点名是 SSO WebView 入口，提交请求不在 APK/公开 H5 内 |
-| What have I done? | 完成静态分析、配置脚本、字段清单和验证 |
+| What have I learned? | 晚点名是动态下发的 SSO WebView 入口；APK 只负责服务目录和原生定位/授权桥，最终提交请求不在 APK/公开 H5 内 |
+| What have I done? | 完成完整 AOT 静态分析、定位字段/调用链、服务目录请求还原、配置脚本、字段清单和验证 |
