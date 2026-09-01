@@ -95,6 +95,9 @@
   - 还原通用“我的服务”目录请求的 GET 路径及查询字段；`trackSignIn`/`signIn` 归类为登录行为统计，不是晚点名提交。
   - 完整 AOT 输出未发现 `attn`、`livecloud`、`oauth2` 或签到专属 Request 类，确认最终 H5 请求仍需有效页面运行时采集。
   - Chrome 中找到用户的登录标签页，但可见 DOM/网络能力暂时无响应；未刷新页面、未点击签到、未传输敏感数据。
+  - 通过实体设备 ADB 检查并授予定位权限，确认设备 App 为 `1.17.3`，实际页面显示既有签到成功状态；未重复提交。
+  - 在电脑安装 mitmproxy 并验证本机福大域名捕获；设备 WebView 代理后报证书信任链错误且无设备事件，已关闭设备代理并保留失败证据。
+  - 拉取设备 `1.17.3` APK 到忽略目录并用 JADX 1.5.6 反编译；Java 层仍为 Flutter 壳，`network_security_config` 只允许明文，未开启 WebView 调试。
 
 ### Phase 6: 远程仓库同步
 - **Status:** complete

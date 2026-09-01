@@ -73,6 +73,9 @@
 - `late_rollcall_checkin.py` 支持 JSON/form/raw 请求体、`${section.field}` 替换、请求/查询参数脱敏、回环 HTTP 错误测试和 `--send` 双重开关；`late_rollcall_config.json` 默认 `request.enabled=false` 且 body 为空。
 - 已生成本地忽略文件 `data.json` 的最小占位模板：只保留 App/入口、SSO 会话、定位和最终请求配置；敏感值统一为 `XXXXX`，`request.body` 保持为空，最终请求字段以晚间实际捕获结果为准。
 - `late_rollcall_checkin.py` 现在优先读取有内容的本地 `data.json`，不存在或为空时回退到仓库中的 `late_rollcall_config.json`；`.env` 和 `data.json` 均由 `.gitignore` 排除。
+- 实体设备运行的智汇福大包是 `1.17.3` / versionCode `26042401`，与项目原始 APK `1.17.0` 不同；设备包 SHA-256 只保留在本地分析结果，不进入发布仓库。
+- 实体 App 在定位权限授予后通过 WebView 日志确认了 `native/permission` 定位权限桥；当前页面显示的是此前已经存在的“签到成功”状态，本次没有点击最终签到。
+- 电脑 mitmproxy 本身可以捕获福大域名的只读请求，但设备 WebView 经过代理时报 `Trust anchor for certification path not found` / SSL handshake failed，且没有产生设备端安全元数据；这条路径未能取得最终签到 body，不继续绕过证书校验。
 - 本地原始历史的 push 风险已处理：其中包含 `base.apk.1`（105,656,864 bytes，超过 GitHub 普通单文件 100 MB 限制）、Flutter native 库和 `analysis/.venv`，且没有 LFS tracking，因此没有直接推送原始 `main`。
 - 已按用户要求使用 `.gitignore` 忽略 APK/解包产物/虚拟环境，并从当前工作树制作代码文档干净快照；提交 `ab91fe9` 初次发布、`5d43847`/`fcb9f67` 记录同步、`89c5701` 浏览器复核记录，均已推送到 `origin/main`。远程目前只含脚本、JSON、测试和脱敏分析文档，本地原始 `main` 历史保持不变。
 - 新增 `analysis/late_rollcall_static_inventory.md`，集中整理晚点名入口/SSO 回调/定位桥协议、字段状态、最终请求待确认项和晚间采集顺序；不含用户 token/Cookie/精确坐标。
