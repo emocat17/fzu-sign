@@ -1,7 +1,9 @@
 analysis/tools/fzuhelper-app/
 analysis/tools/blutter/
+analysis/tools/
 analysis/apk/
 analysis/.venv/
+analysis/__pycache__/
 *.apk
 *.apk.*
 *.aab

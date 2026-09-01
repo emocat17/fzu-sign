@@ -87,6 +87,7 @@
   - 建立 `analysis/evening_capture_log.md`，规定脱敏记录格式和提交前确认点。
 - Files created/modified:
   - `analysis/evening_capture_log.md`
+  - Blutter 初始化成功，但 AOT 构建因 Windows SDK 缺失停在 CMake 配置阶段；已记录错误并保留字符串/访问器静态结论。
 
 ### Phase 6: 远程仓库同步
 - **Status:** complete
@@ -94,7 +95,7 @@
   - `.gitignore` 增加 APK、解包目录、虚拟环境和本地抓包文件规则。
   - 远程仓库使用无 APK 的独立根提交，避免把本地历史中的超限二进制上传。
   - 推送后复核 `origin/main` 文件清单，仅包含脚本、JSON、测试和脱敏文档。
-- Remote commit: `ab91fe9` (`Add configurable late roll-call check-in tooling`)
+- Remote commits: `ab91fe9` (initial clean publication), `5d43847` (publication record synchronized)
 
 ## Test Results
 | Test | Input | Expected | Actual | Status |
@@ -118,14 +119,15 @@
 | 2026-09-01 | 递归删除 claude-mem 数据/cache 被执行策略拒绝 | 1 | CLI 卸载已完成；保留目录不参与任务 |
 | 2026-09-01 | PowerShell 下 `rg` 的脚本目录 glob 无效 | 1 | 记录为工具探测噪声，后续改用文件枚举 |
 | 2026-09-01 | 公开 H5 搜索输出触发 GBK `UnicodeEncodeError` | 1 | stdout 与上下文改为 ASCII-safe |
-| 2026-09-01 | Blutter Dart 探测缺少 Python `requests` | 1 | 记录依赖缺口，先读取脚本/评估是否需要构建 |
+| 2026-09-01 | Blutter Dart 探测缺少 Python `requests` | 1 | 记录依赖缺口，改用项目虚拟环境 |
+| 2026-09-01 | Blutter CMake 配置找不到 C/C++ 编译器 | 1 | 确认本机 Windows SDK 环境变量为空，记录为 AOT 构建阻塞；不影响字符串/访问器静态分析 |
 | 2026-09-01 | 资源查询器导入 `parse_arsc` 触发顶层循环并 GBK 编码中断 | 1 | 加主程序保护并使用安全 stdout |
 
 
 ## 5-Question Reboot Check
 | Question | Answer |
 |----------|--------|
-| Where am I? | Phase 4 complete |
+| Where am I? | Phase 5 in progress; Phase 6 remote publication complete |
 | Where am I going? | 交付已确认入口与配置模板；真实提交 URL/body 需自有账号抓包后填入 |
 | What's the goal? | 解析“晚点名签到”接口字段与安全复现方式 |
 | What have I learned? | 晚点名是 SSO WebView 入口，提交请求不在 APK/公开 H5 内 |
