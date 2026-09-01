@@ -40,6 +40,8 @@
   - 阅读官方 SSO 登录实现：整理动态 `SESSION/croypto/flowkey`、AES 加密密码、`SOURCEID_TGC` Cookie 及短信二次验证字段；未将动态认证流程硬编码进脚本。
   - 根配置加入晚点名入口 URL、SSO callback/domain/UA、空的待捕获提交请求模板和字段状态分组。
   - 脚本完成 JSON/form/raw 编码、占位符渲染、URL/header/body 脱敏与显式 `--send` 保护；新增对应 TDD 测试。
+  - 按用户要求生成本地忽略的 `data.json` 完整占位模板，覆盖账号/会话、身份、定位、服务、运行时和请求对照字段；真实签到 body 仍为空。
+  - 脚本默认优先读取有内容的 `data.json`，空文件或不存在时回退到 `late_rollcall_config.json`；11 项测试通过。
   - 核对远程 push 风险：本地历史已包含 105,656,864 字节 APK 和分析环境，Git LFS 未配置；未直接推送原始历史。
   - 使用 `.gitignore` 排除 APK/解包产物/虚拟环境，制作 12 个文件的代码文档干净快照，并以提交 `ab91fe9` 初次发布、`5d43847` 和 `fcb9f67` 同步到 `origin/main`；本地原始 `main` 保持不变。
   - 建立 `analysis/late_rollcall_static_inventory.md`，把当前可确认 URL、SSO/定位桥协议、字段状态和晚间动态采集步骤集中化。
@@ -100,12 +102,12 @@
   - `.gitignore` 增加 APK、解包目录、虚拟环境和本地抓包文件规则。
   - 远程仓库使用无 APK 的独立根提交，避免把本地历史中的超限二进制上传。
   - 推送后复核 `origin/main` 文件清单，仅包含脚本、JSON、测试和脱敏文档。
-- Remote commits: `ab91fe9` (initial clean publication), `5d43847`/`fcb9f67` (analysis record synchronization), `89c5701` (browser inspection record), `af0e64f` (AOT analysis references)
+- Remote commits: `ab91fe9` (initial clean publication), `5d43847`/`fcb9f67` (analysis record synchronization), `89c5701` (browser inspection record), `af0e64f` (AOT analysis references), `2e9ea1c` (AOT docs), `780f016` (local data template loading)
 
 ## Test Results
 | Test | Input | Expected | Actual | Status |
 |------|-------|----------|--------|--------|
-| Unit tests | `python -m unittest discover -s analysis -p test_late_rollcall_checkin.py -v` | 10 pass | 10 pass | PASS |
+| Unit tests | `python -m unittest discover -s analysis -p test_late_rollcall_checkin.py -q` | 11 pass | 11 pass | PASS |
 | Python syntax | `python -m py_compile late_rollcall_checkin.py analysis/test_late_rollcall_checkin.py` | exit 0 | exit 0 | PASS |
 | JSON syntax | `python -m json.tool late_rollcall_config.json` | exit 0 | exit 0 | PASS |
 | Default run | `python late_rollcall_checkin.py` | no network | exit 0, dry-run | PASS |
