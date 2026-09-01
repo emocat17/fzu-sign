@@ -4,6 +4,7 @@ analysis/tools/
 analysis/apk/
 analysis/.venv/
 analysis/__pycache__/
+__pycache__/
 *.apk
 *.apk.*
 *.aab

@@ -41,7 +41,7 @@
   - 根配置加入晚点名入口 URL、SSO callback/domain/UA、空的待捕获提交请求模板和字段状态分组。
   - 脚本完成 JSON/form/raw 编码、占位符渲染、URL/header/body 脱敏与显式 `--send` 保护；新增对应 TDD 测试。
   - 核对远程 push 风险：本地历史已包含 105,656,864 字节 APK 和分析环境，Git LFS 未配置；未直接推送原始历史。
-  - 使用 `.gitignore` 排除 APK/解包产物/虚拟环境，制作 12 个文件的代码文档干净快照，并以提交 `ab91fe9` 推送到 `origin/main`；本地原始 `main` 保持不变。
+  - 使用 `.gitignore` 排除 APK/解包产物/虚拟环境，制作 12 个文件的代码文档干净快照，并以提交 `ab91fe9` 初次发布、`5d43847` 和 `fcb9f67` 同步到 `origin/main`；本地原始 `main` 保持不变。
   - 建立 `analysis/late_rollcall_static_inventory.md`，把当前可确认 URL、SSO/定位桥协议、字段状态和晚间动态采集步骤集中化。
   - DEX 精确解析确认仅为 Flutter/native 壳层，未包含业务请求实现。
   - 按用户要求运行 claude-mem 卸载；卸载成功，用户数据/旧 cache 目录的额外手动删除被策略拒绝，未影响项目分析。
@@ -88,6 +88,7 @@
 - Files created/modified:
   - `analysis/evening_capture_log.md`
   - Blutter 初始化成功，但 AOT 构建因 Windows SDK 缺失停在 CMake 配置阶段；已记录错误并保留字符串/访问器静态结论。
+  - Chrome 中找到用户的登录标签页，但可见 DOM/网络能力暂时无响应；未刷新页面、未点击签到、未传输敏感数据。
 
 ### Phase 6: 远程仓库同步
 - **Status:** complete
