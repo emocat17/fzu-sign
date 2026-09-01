@@ -40,7 +40,8 @@
   - 阅读官方 SSO 登录实现：整理动态 `SESSION/croypto/flowkey`、AES 加密密码、`SOURCEID_TGC` Cookie 及短信二次验证字段；未将动态认证流程硬编码进脚本。
   - 根配置加入晚点名入口 URL、SSO callback/domain/UA、空的待捕获提交请求模板和字段状态分组。
   - 脚本完成 JSON/form/raw 编码、占位符渲染、URL/header/body 脱敏与显式 `--send` 保护；新增对应 TDD 测试。
-  - 核对远程 push 风险：origin 无远程 refs；本地历史已包含 105,656,864 字节 APK 和分析环境，Git LFS 未配置，暂停 push 等待仓库范围选择。
+  - 核对远程 push 风险：本地历史已包含 105,656,864 字节 APK 和分析环境，Git LFS 未配置；未直接推送原始历史。
+  - 使用 `.gitignore` 排除 APK/解包产物/虚拟环境，制作 12 个文件的代码文档干净快照，并以提交 `ab91fe9` 推送到 `origin/main`；本地原始 `main` 保持不变。
   - 建立 `analysis/late_rollcall_static_inventory.md`，把当前可确认 URL、SSO/定位桥协议、字段状态和晚间动态采集步骤集中化。
   - DEX 精确解析确认仅为 Flutter/native 壳层，未包含业务请求实现。
   - 按用户要求运行 claude-mem 卸载；卸载成功，用户数据/旧 cache 目录的额外手动删除被策略拒绝，未影响项目分析。
@@ -86,6 +87,14 @@
   - 建立 `analysis/evening_capture_log.md`，规定脱敏记录格式和提交前确认点。
 - Files created/modified:
   - `analysis/evening_capture_log.md`
+
+### Phase 6: 远程仓库同步
+- **Status:** complete
+- Actions taken:
+  - `.gitignore` 增加 APK、解包目录、虚拟环境和本地抓包文件规则。
+  - 远程仓库使用无 APK 的独立根提交，避免把本地历史中的超限二进制上传。
+  - 推送后复核 `origin/main` 文件清单，仅包含脚本、JSON、测试和脱敏文档。
+- Remote commit: `ab91fe9` (`Add configurable late roll-call check-in tooling`)
 
 ## Test Results
 | Test | Input | Expected | Actual | Status |

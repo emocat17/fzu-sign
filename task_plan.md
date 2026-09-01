@@ -37,9 +37,9 @@ Phase 5
 - [ ] **Status:** pending（已建立采集记录模板）
 
 ### Phase 6: 远程仓库同步
-- [ ] 确认远程仓库是否接收 APK/解包产物，选择只推送代码或配置 Git LFS
-- [ ] 在不改写未确认历史的前提下提交并推送安全文件
-- [ ] **Status:** blocked_pending_user_choice（远程为空且本地历史含超限 APK）
+- [x] 确认远程仓库不接收 APK/解包产物，采用只推送代码、配置和脱敏文档
+- [x] 在保留本地原始历史的前提下创建独立干净提交并推送 `origin/main`
+- [x] **Status:** complete（远程提交 `ab91fe9`，已复核无 APK/解包产物）
 
 ## Key Questions
 1. APK 中“晚点名签到”实际使用哪个 Activity/Service/API？

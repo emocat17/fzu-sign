@@ -62,8 +62,8 @@
 - 官方 SSO 二次验证字段为短信接口 JSON `businessNo=0008, phone`，校验接口 JSON `phone, token, delete=false, trustDevice=false`；脚本暂不自动发送短信或处理 CAPTCHA。
 - 根目录交付配置已把 `https://yzsxg.fzu.edu.cn/livecloud/project/fzu/attn/oauth2/authorize.action` 标为晚点名入口 URL，并记录 SSO Cookie 域、callback URL、应用 User-Agent；最终签到提交 URL/body 仍保持 `needs_capture_confirmation`，不会用候选字段冒充真实协议。
 - `late_rollcall_checkin.py` 支持 JSON/form/raw 请求体、`${section.field}` 替换、请求/查询参数脱敏、回环 HTTP 错误测试和 `--send` 双重开关；`late_rollcall_config.json` 默认 `request.enabled=false` 且 body 为空。
-- Git 状态：remote `origin=https://github.com/emocat17/zhfd.git`，本地分支 `main`；远程没有返回 refs，本地 `HEAD` 为 `b777214`。本地初始历史包含 `base.apk.1`（105,656,864 bytes，超过 GitHub 普通单文件 100 MB 限制）、Flutter native 库和 `analysis/.venv`，且没有 LFS tracking；直接 push 整个 `main` 不安全/大概率失败。
-- 当前应只推送脚本/JSON和脱敏分析记录，或先由用户选择 Git LFS/清理历史/新建干净分支；不能在未确认下强推或改写现有 `main`。
+- 本地原始历史的 push 风险已处理：其中包含 `base.apk.1`（105,656,864 bytes，超过 GitHub 普通单文件 100 MB 限制）、Flutter native 库和 `analysis/.venv`，且没有 LFS tracking，因此没有直接推送原始 `main`。
+- 已按用户要求使用 `.gitignore` 忽略 APK/解包产物/虚拟环境，并从当前工作树制作代码文档干净快照；提交 `ab91fe9` 已推送到 `origin/main`。远程目前只含脚本、JSON、测试和脱敏分析文档，本地原始 `main` 历史保持不变。
 - 新增 `analysis/late_rollcall_static_inventory.md`，集中整理晚点名入口/SSO 回调/定位桥协议、字段状态、最终请求待确认项和晚间采集顺序；不含用户 token/Cookie/精确坐标。
 - 公开入口探测结果：`https://app.fzu.edu.cn/fd-app/m/index.html` 返回 200；`https://app.fzu.edu.cn/zhfd/` 返回 404。对 `https://api.quingk.com/operation/service/app/v1/getMyHomeService`、`getPageService` 空 JSON POST 返回 404，登录路径空体超时；因此当前不能把 `api.quingk.com` 直接当作 Flutter 服务 API base URL。
 - 这些探测未带凭证，也未触发签到；404 更可能表示缺少应用前缀/路由网关或 API 并不在该 host。
