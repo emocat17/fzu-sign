@@ -40,7 +40,7 @@
   - 阅读官方 SSO 登录实现：整理动态 `SESSION/croypto/flowkey`、AES 加密密码、`SOURCEID_TGC` Cookie 及短信二次验证字段；未将动态认证流程硬编码进脚本。
   - 根配置加入晚点名入口 URL、SSO callback/domain/UA、空的待捕获提交请求模板和字段状态分组。
   - 脚本完成 JSON/form/raw 编码、占位符渲染、URL/header/body 脱敏与显式 `--send` 保护；新增对应 TDD 测试。
-  - 按用户要求生成本地忽略的 `data.json` 完整占位模板，覆盖账号/会话、身份、定位、服务、运行时和请求对照字段；真实签到 body 仍为空。
+  - 按用户要求将本地忽略的 `data.json` 精简为最小占位模板，仅保留 App/入口、会话、定位和最终请求配置；真实签到 body 仍为空。
   - 脚本默认优先读取有内容的 `data.json`，空文件或不存在时回退到 `late_rollcall_config.json`；11 项测试通过。
   - 核对远程 push 风险：本地历史已包含 105,656,864 字节 APK 和分析环境，Git LFS 未配置；未直接推送原始历史。
   - 使用 `.gitignore` 排除 APK/解包产物/虚拟环境，制作 12 个文件的代码文档干净快照，并以提交 `ab91fe9` 初次发布、`5d43847` 和 `fcb9f67` 同步到 `origin/main`；本地原始 `main` 保持不变。
