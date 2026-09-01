@@ -83,6 +83,7 @@
 - 只读运行时探测确认 `init.action` 返回外层 `success/code/msg/data`，`data` 包含 `paramsData`、`schoolData`、`userData`、`mapData`、`statusData`；`currentTimestamp.action` 的 `data` 包含 `date`、`userId`、`timestamp`。
 - 已新增根目录 `main.py`：读取本地 `data.json`，动态调用 `init/currentTimestamp`，按 H5 顺序构造 `check/clockIn` 加密参数；默认 dry-run，`--send` 还要求 `request.enabled=true`、时间窗口有效、状态未签到、范围校验通过和运行时输入 `CONFIRM`。
 - `requirements.txt` 已加入 `cryptography` 依赖；当前工作机默认 Python 3.11 已安装并通过脚本导入验证。
+- 已清理可重建临时产物：`analysis/tools`、`analysis/apk`、`captures`、`.idea` 和根目录下载的 H5 JS 已移入 Windows 回收站；原始 APK、核心脚本、配置和分析报告保留。`analysis/.venv`/历史 pycache 因属于原始本地跟踪内容未强删，远程快照不包含它们。
 - 本地原始历史的 push 风险已处理：其中包含 `base.apk.1`（105,656,864 bytes，超过 GitHub 普通单文件 100 MB 限制）、Flutter native 库和 `analysis/.venv`，且没有 LFS tracking，因此没有直接推送原始 `main`。
 - 已按用户要求使用 `.gitignore` 忽略 APK/解包产物/虚拟环境，并从当前工作树制作代码文档干净快照；提交 `ab91fe9` 初次发布、`5d43847`/`fcb9f67` 记录同步、`89c5701` 浏览器复核记录，均已推送到 `origin/main`。远程目前只含脚本、JSON、测试和脱敏分析文档，本地原始 `main` 历史保持不变。
 - 新增 `analysis/late_rollcall_static_inventory.md`，集中整理晚点名入口/SSO 回调/定位桥协议、字段状态、最终请求待确认项和晚间采集顺序；不含用户 token/Cookie/精确坐标。

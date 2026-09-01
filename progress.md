@@ -103,6 +103,7 @@
   - 还原 `clockIn.action` 加密前 10 字段和统一 `param` query 包装；补充 AES-CBC/PKCS7/UTF-8/Base64/URL 编码协议说明。
   - 按 TDD 新增并验证 `main.py` 协议运行器：动态 init/time、payload 字段顺序、校区匹配、时间窗口、范围校验和显式提交确认。
   - `data.json` 已补齐当前 H5 的接口参数与固定 AES 配置；token、真实定位和最终开关仍由本地运行者填写/确认。
+  - 按用户要求整理目录：临时逆向工具、设备 APK/JADX 输出、抓包截图/证书日志、Android Studio 元数据和下载的 H5 JS 已移入回收站；核心源 APK 与交付文档保留。
 
 ### Phase 6: 远程仓库同步
 - **Status:** complete
