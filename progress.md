@@ -96,7 +96,7 @@
   - `.gitignore` 增加 APK、解包目录、虚拟环境和本地抓包文件规则。
   - 远程仓库使用无 APK 的独立根提交，避免把本地历史中的超限二进制上传。
   - 推送后复核 `origin/main` 文件清单，仅包含脚本、JSON、测试和脱敏文档。
-- Remote commits: `ab91fe9` (initial clean publication), `5d43847` (publication record synchronized)
+- Remote commits: `ab91fe9` (initial clean publication), `5d43847`/`fcb9f67` (analysis record synchronization), `89c5701` (browser inspection record)
 
 ## Test Results
 | Test | Input | Expected | Actual | Status |
