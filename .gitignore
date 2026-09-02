@@ -15,6 +15,7 @@ captures/
 *.pcapng
 base.apk.1
 .env
+.venv
 data.json
 mitmproxy-ca-cert.cer
 .idea/
