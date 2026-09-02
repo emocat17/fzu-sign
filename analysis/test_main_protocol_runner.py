@@ -21,6 +21,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 import main  # noqa: E402  (root module, added to sys.path above)
+from utils.net import configured_headers, request_json  # noqa: E402
 
 
 def _base_config(server_url: str) -> dict:
@@ -213,12 +214,12 @@ class MainHeaderTests(unittest.TestCase):
             },
         }
         self.assertEqual(
-            main.configured_headers(config),
+            configured_headers(config),
             {"Cookie": "session=abc", "token": "t-1", "X-Runtime": "7"},
         )
 
     def test_configured_headers_empty_when_no_request_headers(self):
-        self.assertEqual(main.configured_headers({"request": {"headers": {}}}), {})
+        self.assertEqual(configured_headers({"request": {"headers": {}}}), {})
 
 
 class MainErrorReportingTests(unittest.TestCase):
@@ -242,7 +243,7 @@ class MainErrorReportingTests(unittest.TestCase):
         try:
             config = _base_config(f"http://127.0.0.1:{server.server_port}")
             with self.assertRaises(ValueError) as ctx:
-                main.request_json(config, "init.action", "POST", body={})
+                request_json(config, "init.action", "POST", body={})
         finally:
             server.shutdown()
             thread.join(timeout=2)
@@ -263,7 +264,7 @@ class MainErrorReportingTests(unittest.TestCase):
         ) as server:
             config = _base_config(f"http://127.0.0.1:{server.port}")
             with self.assertRaises(ValueError) as ctx:
-                main.request_json(config, "init.action", "POST", body={})
+                request_json(config, "init.action", "POST", body={})
         self.assertIn("非 JSON", str(ctx.exception))
 
 
