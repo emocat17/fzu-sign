@@ -12,7 +12,8 @@ import json
 import sys
 import threading
 import unittest
-from contextlib import redirect_stdout
+from unittest import mock
+from contextlib import redirect_stderr, redirect_stdout
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -267,6 +268,47 @@ class MainErrorReportingTests(unittest.TestCase):
             with self.assertRaises(ValueError) as ctx:
                 request_json(config, "init.action", "POST", body={})
         self.assertIn("非 JSON", str(ctx.exception))
+
+
+class SessionCheckTests(unittest.TestCase):
+    def test_check_session_ok_does_not_notify(self):
+        with _JsonServer(
+            {
+                "init.action": (200, _INIT_OK),
+                "currentTimestamp.action": (200, _TIMESTAMP_OK),
+            }
+        ) as server:
+            config = _base_config(f"http://127.0.0.1:{server.port}")
+            output = io.StringIO()
+            with mock.patch.object(main, "notify_signed") as notify, redirect_stdout(output):
+                code = main.check_session(config)
+        self.assertEqual(code, 0)
+        self.assertIn("会话有效", output.getvalue())
+        notify.assert_not_called()
+
+    def test_check_session_notifies_when_login_required(self):
+        config = _base_config("http://127.0.0.1:1")
+        boom = ValueError("init.action 返回 HTTP 500 … 服务端判定当前会话未登录：仅 token 不够…")
+        err = io.StringIO()
+        with mock.patch("utils.protocol.fetch_init", side_effect=boom), mock.patch.object(
+            main, "notify_signed"
+        ) as notify, redirect_stderr(err):
+            code = main.check_session(config)
+        self.assertEqual(code, 2)
+        self.assertIn("会话异常", err.getvalue())
+        notify.assert_called_once()
+        text = notify.call_args[0][1]
+        self.assertIn("会话失效", text)
+
+    def test_check_session_skips_notify_on_network_error(self):
+        config = _base_config("http://127.0.0.1:1")
+        boom = ValueError("init.action 网络错误: timed out")
+        with mock.patch("utils.protocol.fetch_init", side_effect=boom), mock.patch.object(
+            main, "notify_signed"
+        ) as notify:
+            code = main.check_session(config)
+        self.assertEqual(code, 2)
+        notify.assert_not_called()
 
 
 if __name__ == "__main__":

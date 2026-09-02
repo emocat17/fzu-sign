@@ -77,6 +77,34 @@ def print_preview(config: Mapping[str, Any], init_data: Mapping[str, Any], times
     _ = status
 
 
+def check_session(config: Mapping[str, Any]) -> int:
+    """Read-only session precheck: validates init + server timestamp.
+
+    On success prints the window/status. If the server says the session is not
+    logged in (dead Cookie/token), pushes a WeChat warning via WXKey so the user
+    refreshes it before the sign-in window opens.
+    """
+    try:
+        init_data = protocol.fetch_init(config)
+        protocol.fetch_server_timestamp(config)
+    except ValueError as exc:
+        message = str(exc)
+        print(f"会话异常: {message}", file=sys.stderr)
+        if "未登录" in message:
+            notify_signed(
+                config,
+                "晚点名 · 会话失效",
+                "Cookie/token 已失效：请在签到前重新登录，把最新的 Cookie 与 token 填回 data.json 的 auth.cookie / auth.token。",
+            )
+        return 2
+    print("会话有效：init.action 与 currentTimestamp.action 均返回成功")
+    params = init_data.get("paramsData", {})
+    if isinstance(params, Mapping):
+        print(f"签到窗口: {params.get('FStartTime', '?')} - {params.get('FEndTime', '?')}")
+    print(f"当前状态: {'已签到（不重复）' if protocol.status_success(init_data) else '未签到'}")
+    return 0
+
+
 def run(config: Mapping[str, Any], send: bool) -> int:
     init_data = protocol.fetch_init(config)
     timestamp = protocol.fetch_server_timestamp(config)
@@ -135,6 +163,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="即使 request.enabled=true 也只做只读预览，不发送签到",
     )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="只读会话预检：校验 init/时间戳；会话失效时用 WXKey 推送提醒",
+    )
     args = parser.parse_args(argv)
     if not args.config.exists():
         print(f"找不到配置文件: {args.config}", file=sys.stderr)
@@ -142,6 +175,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     try:
         config = load_config(args.config)
+        if args.check:
+            return check_session(config)
         return run(config, send=False if args.dry_run else should_auto_send(config))
     except (ValueError, TypeError, KeyError) as exc:
         print(f"配置/协议错误: {exc}", file=sys.stderr)

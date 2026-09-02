@@ -17,7 +17,7 @@
     "caIsNo": "0"
   },
   "request": {
-    "enabled": false,
+    "enabled": true,
     "headers": {
       "Cookie": "${auth.cookie}"
     }
