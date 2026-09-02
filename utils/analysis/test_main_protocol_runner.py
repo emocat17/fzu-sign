@@ -17,7 +17,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+# This module lives at <root>/utils/analysis/, so the repo root is three levels up.
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 import main  # noqa: E402  (root module, added to sys.path above)
