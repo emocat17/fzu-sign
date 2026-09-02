@@ -1,0 +1,31 @@
+{
+  "app": {
+    "base_url": "https://yzsxg.fzu.edu.cn",
+    "path_prefix": "/livecloud/project/fzu/attn/",
+    "user_agent": "appId/cn.edu.fzu.fdxypa appScheme/kysk-fdxy-app hengfeng/fdxyappzs appType/2 ruijie-facecamera"
+  },
+  "auth": {
+    "token": "",
+    "cookie": ""
+  },
+  "location": {
+    "latitude": "",
+    "longitude": "",
+    "address": ""
+  },
+  "clock_in": {
+    "caIsNo": "0"
+  },
+  "request": {
+    "enabled": false,
+    "headers": {
+      "Cookie": "${auth.cookie}"
+    }
+  },
+  "encryption": {
+    "key": "apexinfoapexinfo",
+    "iv": "apexinfoapexinfo"
+  },
+  "timeout_seconds": 20,
+  "WXKey": ""
+}

@@ -136,8 +136,12 @@ def main(argv: list[str] | None = None) -> int:
         help="即使 request.enabled=true 也只做只读预览，不发送签到",
     )
     args = parser.parse_args(argv)
-    config = load_config(args.config)
+    if not args.config.exists():
+        print(f"找不到配置文件: {args.config}", file=sys.stderr)
+        print("首次使用请先复制模板再填写：copy data.json.example data.json", file=sys.stderr)
+        return 2
     try:
+        config = load_config(args.config)
         return run(config, send=False if args.dry_run else should_auto_send(config))
     except (ValueError, TypeError, KeyError) as exc:
         print(f"配置/协议错误: {exc}", file=sys.stderr)
