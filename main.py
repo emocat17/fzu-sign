@@ -22,7 +22,7 @@ from utils.config import (
     api_url,
     load_config,
     personal_wx_key,
-    save_user_cookie,
+    save_user_auth,
     should_auto_send,
     summary_wx_key,
     user_configs,
@@ -31,7 +31,14 @@ from utils.config import (
     validate_user_config,
 )
 from utils.log import write_log
-from utils.sso import apply_cookie, auth_cookie, auth_credentials, login_and_cookie, session_unauthenticated
+from utils.sso import (
+    apply_session,
+    auth_cookie,
+    auth_token_value,
+    can_refresh_session,
+    login_and_session,
+    session_unauthenticated,
+)
 
 
 def _ca_is_no(config: Mapping[str, Any]) -> str:
@@ -114,22 +121,24 @@ def print_preview(config: Mapping[str, Any], init_data: Mapping[str, Any], times
 
 
 def refresh_session_cookie(config: dict[str, Any], path: Path) -> None:
-    cookie = login_and_cookie(config)
-    apply_cookie(config, cookie)
-    save_user_cookie(path, user_label(config), cookie)
-    write_log(f"[{user_label(config)}] 已刷新 Cookie 并写回 {path.name}")
+    cookie, token = login_and_session(config)
+    apply_session(config, cookie, token)
+    save_user_auth(path, user_label(config), cookie, token)
+    extra = "和 token" if token else ""
+    write_log(f"[{user_label(config)}] 已刷新 Cookie{extra} 并写回 {path.name}")
 
 
 def with_fresh_session(config: dict[str, Any], path: Path, fetch):
-    if not auth_cookie(config) and auth_credentials(config) is not None:
-        write_log(f"[{user_label(config)}] 未填写 Cookie，正在用账号密码登录…")
+    missing = (not auth_cookie(config) or not auth_token_value(config)) and can_refresh_session(config)
+    if missing:
+        write_log(f"[{user_label(config)}] Cookie/token 缺失，正在自动登录补齐…")
         refresh_session_cookie(config, path)
     try:
         return fetch()
     except ValueError as exc:
-        if not session_unauthenticated(exc) or auth_credentials(config) is None:
+        if not session_unauthenticated(exc) or not can_refresh_session(config):
             raise
-        write_log(f"[{user_label(config)}] Cookie 失效，正在用账号密码重新登录…")
+        write_log(f"[{user_label(config)}] Cookie/token 失效，正在自动重新登录…")
         refresh_session_cookie(config, path)
         return fetch()
 
@@ -224,10 +233,10 @@ def handle_user(config: dict[str, Any], args: argparse.Namespace) -> dict[str, A
         return _result(name, "skipped", 0, "未启用")
     try:
         if args.refresh_cookie:
-            if auth_credentials(config) is None:
-                raise ValueError("未填写 auth.username / auth.password，无法自动刷新 Cookie")
+            if not can_refresh_session(config):
+                raise ValueError("未填写 Cookie 或账号密码，无法自动刷新会话")
             refresh_session_cookie(config, args.config)
-            return _result(name, "refreshed", 0, "已刷新Cookie")
+            return _result(name, "refreshed", 0, "已刷新Cookie/token")
         validate_user_config(config)
         if args.check:
             code = check_session(config, args.config)
@@ -258,12 +267,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--check",
         action="store_true",
-        help="只读会话预检：校验 init/时间戳；会话失效时自动刷新 Cookie",
+        help="只读会话预检：校验 init/时间戳；会话失效时自动刷新 Cookie/token",
     )
     parser.add_argument(
         "--refresh-cookie",
         action="store_true",
-        help="强制用账号密码重新登录，把新 Cookie 写回 data.json，不签到",
+        help="强制刷新 Cookie/token 并写回 data.json，不签到",
     )
     args = parser.parse_args(argv)
     if not args.config.exists():

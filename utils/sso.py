@@ -1,4 +1,4 @@
-"""FZU SSO login used to refresh an expired yzsxg session Cookie."""
+"""FZU SSO login used to refresh an expired yzsxg session Cookie and page token."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import re
 from collections.abc import Mapping
 from http.cookiejar import CookieJar
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import parse_qs, urljoin, urlparse
 
 from utils.config import PLACEHOLDERS, base_url, real_value, timeout_seconds
 
@@ -18,7 +18,10 @@ LOGIN_MARKERS = ("请先登录", "请登录", "未登录", "登录后操作", "�
 
 
 def session_unauthenticated(exc: BaseException) -> bool:
-    return any(marker in str(exc) for marker in LOGIN_MARKERS)
+    message = str(exc)
+    if any(marker in message for marker in LOGIN_MARKERS):
+        return True
+    return "auth.token" in message or "缺少 token" in message
 
 
 def auth_credentials(config: Mapping[str, Any]) -> tuple[str, str] | None:
@@ -43,6 +46,19 @@ def auth_cookie(config: Mapping[str, Any]) -> str:
     cookie = auth.get("cookie")
     text = str(cookie).strip() if cookie is not None else ""
     return "" if text in PLACEHOLDERS else text
+
+
+def auth_token_value(config: Mapping[str, Any]) -> str:
+    auth = config.get("auth", {})
+    if not isinstance(auth, Mapping):
+        return ""
+    token = auth.get("token")
+    text = str(token).strip() if token is not None else ""
+    return "" if text in PLACEHOLDERS else text
+
+
+def can_refresh_session(config: Mapping[str, Any]) -> bool:
+    return auth_credentials(config) is not None or bool(auth_cookie(config))
 
 
 def encrypt_password(plain: str, croypto_b64: str) -> str:
@@ -94,6 +110,18 @@ def parse_login_page(html: str) -> dict[str, str]:
     }
 
 
+def extract_token(url: str, html: str = "") -> str:
+    parsed = urlparse(url)
+    for source in (parsed.query, parsed.fragment):
+        values = parse_qs(source).get("token") or []
+        if values and str(values[0]).strip():
+            return str(values[0]).strip()
+    match = re.search(r"(?:\?|&|#)token=([^&\"'\s<>]+)", html or "", re.I)
+    if match:
+        return match.group(1).strip()
+    return ""
+
+
 def cookie_header_from_jar(jar: CookieJar | Any, hosts: tuple[str, ...] = ("yzsxg.fzu.edu.cn",)) -> str:
     parts: list[str] = []
     seen: set[str] = set()
@@ -115,44 +143,82 @@ def _user_agent(config: Mapping[str, Any]) -> str:
     return "Mozilla/5.0"
 
 
-def apply_cookie(config: dict[str, Any], cookie: str) -> None:
+def apply_session(config: dict[str, Any], cookie: str, token: str = "") -> None:
     auth = config.setdefault("auth", {})
     if not isinstance(auth, dict):
         raise ValueError("auth 必须是 JSON 对象")
-    auth["cookie"] = cookie
+    if cookie:
+        auth["cookie"] = cookie
+    if token:
+        auth["token"] = token
 
 
-def login_and_cookie(config: Mapping[str, Any]) -> str:
-    """Log in via FZU SSO and return the yzsxg Cookie header string."""
+def apply_cookie(config: dict[str, Any], cookie: str) -> None:
+    apply_session(config, cookie)
+
+
+def _seed_cookies(session: Any, cookie_header: str) -> None:
+    for part in cookie_header.split(";"):
+        item = part.strip()
+        if "=" not in item:
+            continue
+        name, value = item.split("=", 1)
+        name, value = name.strip(), value.strip()
+        if not name:
+            continue
+        session.cookies.set(name, value, domain="yzsxg.fzu.edu.cn")
+
+
+def _jar_cookie(session: Any) -> str:
+    cookie = cookie_header_from_jar(session.cookies)
+    if not cookie:
+        cookie = cookie_header_from_jar(session.cookies, hosts=())
+    return cookie
+
+
+def _open_authorize(session: Any, config: Mapping[str, Any], headers: Mapping[str, str], timeout: float):
+    origin = base_url(config)
+    service = f"{origin}/livecloud/project/fzu/attn/oauth2/callback.action"
+    authorize = urljoin(origin + "/", AUTHORIZE_PATH.lstrip("/"))
+    response = session.get(authorize, headers=headers, timeout=timeout, allow_redirects=True)
+    if response.status_code >= 400:
+        response = session.get(
+            f"{SSO_ORIGIN}/login",
+            params={"service": service},
+            headers=headers,
+            timeout=timeout,
+            allow_redirects=True,
+        )
+    response.raise_for_status()
+    return response
+
+
+def login_and_session(config: Mapping[str, Any]) -> tuple[str, str]:
+    """Log in via Cookie or SSO and return (cookie, token)."""
     try:
         import requests
     except ImportError as exc:  # pragma: no cover
         raise SystemExit("缺少 requests 依赖，请运行: python -m pip install requests") from exc
 
     creds = auth_credentials(config)
-    if creds is None:
-        raise ValueError("未填写 auth.username / auth.password，无法自动刷新 Cookie")
-    username, password = creds
-    origin = base_url(config)
-    service = f"{origin}/livecloud/project/fzu/attn/oauth2/callback.action"
-    authorize = urljoin(origin + "/", AUTHORIZE_PATH.lstrip("/"))
+    cookie_header = auth_cookie(config)
+    if creds is None and not cookie_header:
+        raise ValueError("未填写 Cookie 或账号密码，无法自动刷新会话")
     timeout = timeout_seconds(config)
     headers = {"User-Agent": _user_agent(config), "Accept": "text/html,application/xhtml+xml"}
     session = requests.Session()
     try:
-        response = session.get(authorize, headers=headers, timeout=timeout, allow_redirects=True)
-        if response.status_code >= 400:
-            response = session.get(
-                f"{SSO_ORIGIN}/login",
-                params={"service": service},
-                headers=headers,
-                timeout=timeout,
-                allow_redirects=True,
-            )
-        response.raise_for_status()
-        existing = cookie_header_from_jar(session.cookies)
-        if existing and "login-croypto" not in response.text:
-            return existing
+        if cookie_header:
+            _seed_cookies(session, cookie_header)
+        response = _open_authorize(session, config, headers, timeout)
+        token = extract_token(response.url, response.text)
+        if token and "login-croypto" not in response.text:
+            cookie = _jar_cookie(session) or cookie_header
+            if cookie:
+                return cookie, token
+        if creds is None:
+            raise ValueError("当前 Cookie 无法换到 token，请填写 auth.username / auth.password")
+        username, password = creds
         page = parse_login_page(response.text)
         payload = {
             "username": username,
@@ -181,23 +247,26 @@ def login_and_cookie(config: Mapping[str, Any]) -> str:
             except ValueError:
                 extra = ""
             raise ValueError(f"SSO 登录失败{extra}，请检查 auth.username / auth.password")
-        auth = config.get("auth", {})
-        token = ""
-        if isinstance(auth, Mapping) and auth.get("token") not in (None, *PLACEHOLDERS):
-            token = str(auth.get("token") or "").strip()
-        if token:
-            session.get(
+        token = extract_token(posted.url, posted.text)
+        if not token:
+            origin = base_url(config)
+            follow = session.get(
                 urljoin(origin + "/", INDEX_PATH.lstrip("/")),
-                params={"token": token, "contextPath": ""},
                 headers=headers,
                 timeout=timeout,
                 allow_redirects=True,
             )
-        cookie = cookie_header_from_jar(session.cookies)
-        if not cookie:
-            cookie = cookie_header_from_jar(session.cookies, hosts=())
+            token = extract_token(follow.url, follow.text)
+        cookie = _jar_cookie(session)
         if not cookie:
             raise ValueError("SSO 登录成功但未拿到 yzsxg Cookie")
-        return cookie
+        if not token:
+            raise ValueError("SSO 登录成功但未拿到页面 token")
+        return cookie, token
     except requests.RequestException as exc:
         raise ValueError(f"SSO 登录网络错误: {exc}") from exc
+
+
+def login_and_cookie(config: Mapping[str, Any]) -> str:
+    cookie, _token = login_and_session(config)
+    return cookie

@@ -152,8 +152,8 @@ def user_configs(config: Mapping[str, Any], name: str | None = None) -> list[dic
     return selected
 
 
-def save_user_cookie(path: Path, name: str, cookie: str) -> None:
-    """Persist a refreshed Cookie back into ``data.json`` without dropping other users."""
+def save_user_auth(path: Path, name: str, cookie: str, token: str = "") -> None:
+    """Persist refreshed Cookie/token back into ``data.json`` without dropping other users."""
     root = load_config(path)
     users = root.get("users")
     if isinstance(users, list):
@@ -163,7 +163,10 @@ def save_user_cookie(path: Path, name: str, cookie: str) -> None:
                 auth = user.setdefault("auth", {})
                 if not isinstance(auth, dict):
                     raise ValueError(f"{name} 的 auth 必须是 JSON 对象")
-                auth["cookie"] = cookie
+                if cookie:
+                    auth["cookie"] = cookie
+                if token:
+                    auth["token"] = token
                 matched = True
                 break
         if not matched:
@@ -174,8 +177,15 @@ def save_user_cookie(path: Path, name: str, cookie: str) -> None:
             raise ValueError("auth 必须是 JSON 对象")
         if name and user_label(root) not in {name, "未命名"}:
             raise ValueError(f"未找到用户: {name}")
-        auth["cookie"] = cookie
+        if cookie:
+            auth["cookie"] = cookie
+        if token:
+            auth["token"] = token
     path.write_text(json.dumps(root, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def save_user_cookie(path: Path, name: str, cookie: str) -> None:
+    save_user_auth(path, name, cookie)
 
 
 def validate_user_config(config: Mapping[str, Any]) -> None:
@@ -183,7 +193,15 @@ def validate_user_config(config: Mapping[str, Any]) -> None:
     auth = config.get("auth", {})
     if not isinstance(auth, Mapping):
         raise ValueError(f"{label}: auth 必须是 JSON 对象")
-    real_value(auth.get("token"), f"{label}.auth.token")
+    token = str(auth.get("token") or "").strip()
+    cookie = str(auth.get("cookie") or "").strip()
+    username = str(auth.get("username") or "").strip()
+    password = str(auth.get("password") or "").strip()
+    has_token = token not in PLACEHOLDERS
+    has_cookie = cookie not in PLACEHOLDERS
+    has_login = username not in PLACEHOLDERS and password not in PLACEHOLDERS
+    if not has_token and not has_cookie and not has_login:
+        raise ValueError(f"请填写 {label}.auth.token，或填写 Cookie / 账号密码以便自动获取")
     location = config.get("location", {})
     if not isinstance(location, Mapping):
         raise ValueError(f"{label}: location 必须是 JSON 对象")

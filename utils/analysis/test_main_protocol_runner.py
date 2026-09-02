@@ -23,11 +23,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 import main  # noqa: E402  (root module, added to sys.path above)
-from utils.config import save_user_cookie, user_configs, validate_user_config  # noqa: E402
+from utils.config import save_user_auth, save_user_cookie, user_configs, validate_user_config  # noqa: E402
 from utils.notification import format_summary  # noqa: E402
 from utils.net import configured_headers, request_json  # noqa: E402
 from utils.sso import (  # noqa: E402
     encrypt_password,
+    extract_token,
     parse_login_page,
     session_unauthenticated,
 )
@@ -392,13 +393,14 @@ class SessionCheckTests(unittest.TestCase):
         config["auth"] = {"username": "u1", "password": "p1", "token": "test-token"}
         with mock.patch("utils.protocol.fetch_init", return_value=_INIT_OK["data"]), mock.patch(
             "utils.protocol.fetch_server_timestamp", return_value=1
-        ), mock.patch.object(main, "login_and_cookie", return_value="JSESSIONID=new") as login, mock.patch.object(
-            main, "save_user_cookie"
+        ), mock.patch.object(main, "login_and_session", return_value=("JSESSIONID=new", "tok-new")) as login, mock.patch.object(
+            main, "save_user_auth"
         ):
             code = main.check_session(config)
         self.assertEqual(code, 0)
         login.assert_called_once()
         self.assertEqual(config["auth"]["cookie"], "JSESSIONID=new")
+        self.assertEqual(config["auth"]["token"], "tok-new")
 
     def test_check_session_refreshes_cookie_when_credentials_present(self):
         config = _base_config("http://127.0.0.1:1")
@@ -407,14 +409,15 @@ class SessionCheckTests(unittest.TestCase):
         boom = ValueError("init.action 返回 HTTP 500 … 服务端判定当前会话未登录：仅 token 不够…")
         with mock.patch("utils.protocol.fetch_init", side_effect=[boom, _INIT_OK["data"]]), mock.patch(
             "utils.protocol.fetch_server_timestamp", return_value=1
-        ), mock.patch.object(main, "login_and_cookie", return_value="JSESSIONID=new") as login, mock.patch.object(
-            main, "save_user_cookie"
+        ), mock.patch.object(main, "login_and_session", return_value=("JSESSIONID=new", "tok-new")) as login, mock.patch.object(
+            main, "save_user_auth"
         ) as save, mock.patch.object(main, "notify_signed") as notify:
             code = main.check_session(config)
         self.assertEqual(code, 0)
         login.assert_called_once()
         save.assert_called_once()
         self.assertEqual(config["auth"]["cookie"], "JSESSIONID=new")
+        self.assertEqual(config["auth"]["token"], "tok-new")
         notify.assert_not_called()
 
 
@@ -467,6 +470,25 @@ class SsoHelperTests(unittest.TestCase):
         self.assertEqual(saved["users"][0]["auth"]["token"], "t1")
         self.assertEqual(saved["users"][1]["auth"]["cookie"], "old-2")
 
+    def test_extract_token_from_url_and_html(self):
+        self.assertEqual(
+            extract_token("https://yzsxg.fzu.edu.cn/plug-in/livecloud/project/fzu/attn/index.action?token=abc123&contextPath="),
+            "abc123",
+        )
+        self.assertEqual(extract_token("https://example.test/", 'href="index.action?token=xyz789"'), "xyz789")
+
+    def test_save_user_auth_updates_cookie_and_token(self):
+        import tempfile
+
+        payload = {"users": [{"name": "张三", "auth": {"cookie": "old", "token": "old-t"}}]}
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "data.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            save_user_auth(path, "张三", "JSESSIONID=new", "tok-new")
+            saved = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(saved["users"][0]["auth"]["cookie"], "JSESSIONID=new")
+        self.assertEqual(saved["users"][0]["auth"]["token"], "tok-new")
+
 
 class SummaryAndValidationTests(unittest.TestCase):
     def test_format_summary_all_success(self):
@@ -490,9 +512,16 @@ class SummaryAndValidationTests(unittest.TestCase):
         self.assertEqual(title, "部分失败")
         self.assertIn("李四失败，原因：cookie错误", desp)
 
-    def test_validate_user_config_requires_token_and_location(self):
+    def test_validate_user_config_requires_token_or_login(self):
         with self.assertRaises(ValueError):
             validate_user_config({"name": "张三", "auth": {"token": ""}, "location": {"latitude": 1, "longitude": 2, "address": "A"}})
+        validate_user_config(
+            {
+                "name": "张三",
+                "auth": {"username": "u", "password": "p"},
+                "location": {"latitude": 1, "longitude": 2, "address": "A"},
+            }
+        )
 
     def test_classify_reason_cookie(self):
         self.assertEqual(main.classify_reason(ValueError("服务端判定当前会话未登录")), "cookie错误")
