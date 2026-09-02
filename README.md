@@ -113,10 +113,6 @@ Linux / macOS 用 `cp data.json.example data.json`。`data.json` 已加入 `.git
 
 Windows 计划任务(每天 21:35):
 
-```powershell
-python D:\GitWork\zhfd\main.py
-```
-
 在「任务计划程序」里新建基本任务:触发器选每天 21:35,操作选启动程序,程序填 `python`,参数填 `main.py`,起始于填仓库目录。
 
 Linux crontab:
@@ -138,9 +134,9 @@ main.py                    编排 + CLI
 data.json.example          配置模板(复制为 data.json)
 logs/                      按日运行日志(不提交)
 utils/
-  config.py                配置加载/校验、用户展开、Cookie 回写
+  config.py                配置加载/校验、用户展开、Cookie/token 回写
   net.py                   HTTP、重试、头插值
-  sso.py                   学校 SSO 登录刷新 Cookie
+  sso.py                   学校 SSO 登录，刷新 Cookie/token
   log.py                   按日写入 logs/
   notification.py          Server酱个人/汇总通知
   crypto.py / protocol.py / payload.py / schedule.py
