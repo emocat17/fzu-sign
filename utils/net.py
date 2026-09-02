@@ -85,7 +85,7 @@ def login_hint(raw: bytes) -> str:
         text = raw.decode("utf-8", "replace")
     markers = ("请先登录", "请登录", "未登录", "登录后操作", "先登录", "not logged", "login first")
     if any(marker in text for marker in markers):
-        return "，服务端判定当前会话未登录：仅 token 不够，请在签到时段把本人已登录的 App/浏览器会话 Cookie 填入 data.json→auth.cookie"
+        return "，服务端判定当前会话未登录：请填入 auth.cookie，或填写 auth.username / auth.password 以便自动登录"
     return ""
 
 

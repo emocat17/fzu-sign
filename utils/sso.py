@@ -36,6 +36,15 @@ def auth_credentials(config: Mapping[str, Any]) -> tuple[str, str] | None:
     return user_text, pass_text
 
 
+def auth_cookie(config: Mapping[str, Any]) -> str:
+    auth = config.get("auth", {})
+    if not isinstance(auth, Mapping):
+        return ""
+    cookie = auth.get("cookie")
+    text = str(cookie).strip() if cookie is not None else ""
+    return "" if text in PLACEHOLDERS else text
+
+
 def encrypt_password(plain: str, croypto_b64: str) -> str:
     try:
         from cryptography.hazmat.primitives import padding

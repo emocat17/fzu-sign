@@ -386,6 +386,20 @@ class SessionCheckTests(unittest.TestCase):
         self.assertEqual(code, 2)
         notify.assert_not_called()
 
+    def test_missing_cookie_logs_in_before_first_request(self):
+        config = _base_config("http://127.0.0.1:1")
+        config["name"] = "张三"
+        config["auth"] = {"username": "u1", "password": "p1", "token": "test-token"}
+        with mock.patch("utils.protocol.fetch_init", return_value=_INIT_OK["data"]), mock.patch(
+            "utils.protocol.fetch_server_timestamp", return_value=1
+        ), mock.patch.object(main, "login_and_cookie", return_value="JSESSIONID=new") as login, mock.patch.object(
+            main, "save_user_cookie"
+        ):
+            code = main.check_session(config)
+        self.assertEqual(code, 0)
+        login.assert_called_once()
+        self.assertEqual(config["auth"]["cookie"], "JSESSIONID=new")
+
     def test_check_session_refreshes_cookie_when_credentials_present(self):
         config = _base_config("http://127.0.0.1:1")
         config["name"] = "张三"

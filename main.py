@@ -31,7 +31,7 @@ from utils.config import (
     validate_user_config,
 )
 from utils.log import write_log
-from utils.sso import apply_cookie, auth_credentials, login_and_cookie, session_unauthenticated
+from utils.sso import apply_cookie, auth_cookie, auth_credentials, login_and_cookie, session_unauthenticated
 
 
 def _ca_is_no(config: Mapping[str, Any]) -> str:
@@ -121,6 +121,9 @@ def refresh_session_cookie(config: dict[str, Any], path: Path) -> None:
 
 
 def with_fresh_session(config: dict[str, Any], path: Path, fetch):
+    if not auth_cookie(config) and auth_credentials(config) is not None:
+        write_log(f"[{user_label(config)}] 未填写 Cookie，正在用账号密码登录…")
+        refresh_session_cookie(config, path)
     try:
         return fetch()
     except ValueError as exc:
