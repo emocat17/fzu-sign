@@ -17,11 +17,13 @@
     "key": "apexinfoapexinfo",
     "iv": "apexinfoapexinfo"
   },
-  "timeout_seconds": 20,
+  "timeout_seconds": 30,
+  "retry_times": 3,
   "WXKey": "",
   "users": [
     {
       "name": "张三",
+      "enabled": true,
       "auth": {
         "username": "",
         "password": "",
@@ -36,6 +38,7 @@
     },
     {
       "name": "李四",
+      "enabled": true,
       "auth": {
         "username": "",
         "password": "",

@@ -9,7 +9,7 @@ from http.cookiejar import CookieJar
 from typing import Any
 from urllib.parse import urljoin
 
-from utils.config import PLACEHOLDERS, base_url, real_value
+from utils.config import PLACEHOLDERS, base_url, real_value, timeout_seconds
 
 SSO_ORIGIN = "https://sso.fzu.edu.cn"
 AUTHORIZE_PATH = "/livecloud/project/fzu/attn/oauth2/authorize.action"
@@ -99,13 +99,6 @@ def cookie_header_from_jar(jar: CookieJar | Any, hosts: tuple[str, ...] = ("yzsx
     return "; ".join(parts)
 
 
-def _timeout(config: Mapping[str, Any]) -> float:
-    try:
-        return float(config.get("timeout_seconds", 20))
-    except (TypeError, ValueError):
-        return 20.0
-
-
 def _user_agent(config: Mapping[str, Any]) -> str:
     app = config.get("app", {})
     if isinstance(app, Mapping) and app.get("user_agent"):
@@ -134,7 +127,7 @@ def login_and_cookie(config: Mapping[str, Any]) -> str:
     origin = base_url(config)
     service = f"{origin}/livecloud/project/fzu/attn/oauth2/callback.action"
     authorize = urljoin(origin + "/", AUTHORIZE_PATH.lstrip("/"))
-    timeout = _timeout(config)
+    timeout = timeout_seconds(config)
     headers = {"User-Agent": _user_agent(config), "Accept": "text/html,application/xhtml+xml"}
     session = requests.Session()
     try:

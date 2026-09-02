@@ -17,6 +17,7 @@ base.apk.1
 .env
 .venv
 data.json
+logs/
 mitmproxy-ca-cert.cer
 .idea/
 index-cb879b31.js

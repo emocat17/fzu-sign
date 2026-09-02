@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from collections.abc import Mapping
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from utils.config import PLACEHOLDERS, api_url, app_config, auth_token
+from utils.config import PLACEHOLDERS, api_url, app_config, auth_token, retry_times, timeout_seconds
 
 
 def lookup_ref(config: Mapping[str, Any], path: str) -> Any:
@@ -104,29 +105,42 @@ def request_json(
     if body is not None:
         data = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         headers["Content-Type"] = "application/json"
-    request = Request(url, data=data, headers=headers, method=method.upper())
-    try:
-        with urlopen(request, timeout=float(config.get("timeout_seconds", 20))) as response:
-            raw = response.read(4 * 1024 * 1024)
-            try:
-                return json.loads(raw.decode("utf-8", "replace"))
-            except json.JSONDecodeError:
-                content_type = response.headers.get("Content-Type", "")
-                hint = "（响应是 HTML/非 JSON，通常是服务端会话异常，而非协议错误）" if "html" in content_type.lower() else ""
-                raise ValueError(
-                    f"{endpoint} 返回了非 JSON 响应 (Content-Type: {content_type or 'unknown'}){hint}{login_hint(raw)}"
-                ) from None
-    except HTTPError as exc:
+    attempts = retry_times(config)
+    last_error: ValueError | None = None
+    for attempt in range(1, attempts + 1):
+        request = Request(url, data=data, headers=headers, method=method.upper())
         try:
-            snippet = exc.read(131072)  # scan for login markers; never printed
-        except Exception:
-            snippet = b""
-        content_type = str(exc.headers.get("Content-Type", "")) if exc.headers else ""
-        suffix = f"，响应 Content-Type: {content_type or 'unknown'}" if content_type else ""
-        html = "，服务端返回了 HTML 错误页（多为会话/鉴权层异常）" if "html" in content_type.lower() else ""
-        raise ValueError(f"{endpoint} 返回 HTTP {exc.code}{suffix}{html}{login_hint(snippet)}") from exc
-    except URLError as exc:
-        raise ValueError(f"{endpoint} 网络错误: {exc.reason}") from exc
+            with urlopen(request, timeout=timeout_seconds(config)) as response:
+                raw = response.read(4 * 1024 * 1024)
+                try:
+                    return json.loads(raw.decode("utf-8", "replace"))
+                except json.JSONDecodeError:
+                    content_type = response.headers.get("Content-Type", "")
+                    hint = "（响应是 HTML/非 JSON，通常是服务端会话异常，而非协议错误）" if "html" in content_type.lower() else ""
+                    raise ValueError(
+                        f"{endpoint} 返回了非 JSON 响应 (Content-Type: {content_type or 'unknown'}){hint}{login_hint(raw)}"
+                    ) from None
+        except HTTPError as exc:
+            try:
+                snippet = exc.read(131072)
+            except Exception:
+                snippet = b""
+            content_type = str(exc.headers.get("Content-Type", "")) if exc.headers else ""
+            suffix = f"，响应 Content-Type: {content_type or 'unknown'}" if content_type else ""
+            html = "，服务端返回了 HTML 错误页（多为会话/鉴权层异常）" if "html" in content_type.lower() else ""
+            last_error = ValueError(f"{endpoint} 返回 HTTP {exc.code}{suffix}{html}{login_hint(snippet)}")
+            last_error.__cause__ = exc
+            if login_hint(snippet) or exc.code not in {502, 503, 504}:
+                raise last_error from exc
+        except URLError as exc:
+            last_error = ValueError(f"{endpoint} 网络错误: {exc.reason}")
+            last_error.__cause__ = exc
+        except ValueError:
+            raise
+        if attempt < attempts:
+            time.sleep(min(attempt, 3))
+    assert last_error is not None
+    raise last_error
 
 
 def unwrap_success(payload: Any, endpoint: str) -> Any:

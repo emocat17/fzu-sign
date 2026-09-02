@@ -1,93 +1,61 @@
-"""
-消息通知模块
-负责发送QQ和微信消息通知
-"""
+"""WeChat (Server酱) notifications."""
+
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 import requests
-from .user_info import get_current_time
+
+from utils.user_info import get_current_time
 
 
 def wx_send(key, text: str | None = None, desp: str | None = None):
-    """
-    发送微信消息通知
-
-    Args:
-        key (str): 微信Server酱API密钥
-        text (str | None): 主标题/消息内容；如果为空则使用默认的“签到成功！”模板
-        desp (str | None): 详细描述，可选
-    """
-    if not key or not key.strip():
+    if not key or not str(key).strip():
         return
+    url = f"https://sctapi.ftqq.com/{key}.send"
+    current_time = get_current_time()
+    data = {
+        "text": f"{current_time}  {text or '签到成功！'}",
+        "desp": desp or "",
+    }
+    response = requests.post(url, data=data, timeout=10)
+    if response.status_code == 200:
+        print("WX消息发送成功")
+    else:
+        print(f"WX消息发送失败，状态码: {response.status_code}")
 
-    try:
-        url = f'https://sctapi.ftqq.com/{key}.send'
-        current_time = get_current_time()  # 获取当前时间
 
-        main_text = text or "签到成功！"
-        data = {
-            'text': f"{current_time}  {main_text}",
-            'desp': desp or "123123",
-        }
-        response = requests.post(url, data=data, timeout=10)
-        if response.status_code == 200:
-            print("WX消息发送成功")
+def format_summary(results: Sequence[Mapping[str, Any]]) -> tuple[str, str]:
+    success_lines: list[str] = []
+    failed_lines: list[str] = []
+    for item in results:
+        name = str(item.get("name") or "未命名")
+        status = str(item.get("status") or "")
+        reason = str(item.get("reason") or "").strip()
+        if status in {"success", "already_signed", "preview", "session_ok", "refreshed"}:
+            extra = f"（{reason}）" if reason else ""
+            success_lines.append(f"{name}成功{extra}")
+        elif status == "skipped":
+            continue
         else:
-            print(f"WX消息发送失败，状态码: {response.status_code}")
-    except Exception as e:
-        print(f"发送微信消息时出错: {e}")
+            failed_lines.append(f"{name}失败，原因：{reason or '未知错误'}")
+    if not failed_lines:
+        title = "全部签到成功"
+    elif not success_lines:
+        title = "全部失败"
+    else:
+        title = "部分失败"
+    parts: list[str] = []
+    if success_lines:
+        parts.append("\n".join(success_lines))
+    if failed_lines:
+        parts.append("\n".join(failed_lines))
+    return title, "\n\n".join(parts) or "无结果"
 
 
 def send_summary_notification(wx_key, results):
-    """
-    发送签到汇总通知
-    
-    Args:
-        wx_key (str): 微信Server酱API密钥
-        results (list): 签到结果列表，每个元素为 (用户名, 状态) 的元组
-    """
-    if not wx_key or not wx_key.strip():
+    if not wx_key or not str(wx_key).strip():
         return
-    
-    try:
-        # 统计结果
-        success_list = []
-        failed_list = []
-        
-        for name, status in results:
-            if status == 'success':
-                success_list.append(name)
-            elif status == 'already_signed':
-                success_list.append(name)  # 已签到也算成功
-            else:
-                failed_list.append(name)
-        
-        # 生成标题
-        if len(failed_list) == 0:
-            title = "全部签到成功"
-        else:
-            title = "部分失败"
-        
-        # 生成描述
-        desp_parts = []
-        if success_list:
-            success_str = "\n".join([f"{name}成功" for name in success_list])
-            desp_parts.append(success_str)
-        if failed_list:
-            failed_str = "\n".join([f"{name}失败" for name in failed_list])
-            desp_parts.append(failed_str)
-        
-        desp = "\n\n".join(desp_parts)
-        
-        # 发送通知
-        url = f'https://sctapi.ftqq.com/{wx_key}.send'
-        data = {
-            'text': title,
-            'desp': desp
-        }
-        response = requests.post(url, data=data)
-        if response.status_code == 200:
-            print(f"汇总通知发送成功: {title}")
-        else:
-            print(f"汇总通知发送失败，状态码: {response.status_code}")
-    except Exception as e:
-        print(f"发送汇总通知时出错: {e}")
+    title, desp = format_summary(results)
+    wx_send(wx_key, text=title, desp=desp)

@@ -14,7 +14,9 @@ H5_AES_KEY = "apexinfoapexinfo"
 H5_PATH_PREFIX = "/livecloud/project/fzu/attn/"
 PLACEHOLDERS = {"", "XXXXX", "<redacted>", "<runtime>", "<actual>"}
 
-SHARED_KEYS = ("app", "clock_in", "request", "encryption", "timeout_seconds", "WXKey")
+SHARED_KEYS = ("app", "clock_in", "request", "encryption", "timeout_seconds", "retry_times", "WXKey")
+DEFAULT_TIMEOUT_SECONDS = 30
+DEFAULT_RETRY_TIMES = 3
 
 
 def load_config(path: Path) -> dict[str, Any]:
@@ -59,10 +61,44 @@ def api_url(config: Mapping[str, Any], endpoint: str) -> str:
     return f"{base_url(config)}/{prefix}/{endpoint.lstrip('/')}"
 
 
+def timeout_seconds(config: Mapping[str, Any]) -> float:
+    try:
+        return float(config.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS))
+    except (TypeError, ValueError):
+        return float(DEFAULT_TIMEOUT_SECONDS)
+
+
+def retry_times(config: Mapping[str, Any]) -> int:
+    try:
+        value = int(config.get("retry_times", DEFAULT_RETRY_TIMES))
+    except (TypeError, ValueError):
+        return DEFAULT_RETRY_TIMES
+    return max(1, value)
+
+
+def user_enabled(config: Mapping[str, Any]) -> bool:
+    return config.get("enabled") is not False
+
+
 def should_auto_send(config: Mapping[str, Any]) -> bool:
-    """The single arming switch: ``python main.py`` signs in iff enabled=true."""
+    """Master ``request.enabled`` plus per-user ``enabled`` (default true)."""
     request_config = config.get("request", {})
-    return isinstance(request_config, Mapping) and request_config.get("enabled") is True
+    master = isinstance(request_config, Mapping) and request_config.get("enabled") is True
+    return master and user_enabled(config)
+
+
+def summary_wx_key(config: Mapping[str, Any]) -> str:
+    key = config.get("_summary_WXKey", config.get("WXKey"))
+    return str(key).strip() if key else ""
+
+
+def personal_wx_key(config: Mapping[str, Any]) -> str:
+    key = config.get("WXKey")
+    text = str(key).strip() if key else ""
+    shared = summary_wx_key(config)
+    if text and text != shared:
+        return text
+    return ""
 
 
 def user_label(config: Mapping[str, Any]) -> str:
@@ -73,11 +109,13 @@ def user_label(config: Mapping[str, Any]) -> str:
 
 def _merge_user(shared: Mapping[str, Any], user: Mapping[str, Any]) -> dict[str, Any]:
     merged = dict(shared)
+    merged["_summary_WXKey"] = shared.get("WXKey", "")
     for key, value in user.items():
         if key == "name":
             continue
         merged[key] = value
     merged["name"] = user_label(user)
+    merged.setdefault("enabled", True)
     return merged
 
 
@@ -92,6 +130,8 @@ def user_configs(config: Mapping[str, Any], name: str | None = None) -> list[dic
     if not isinstance(users, list):
         merged = dict(config)
         merged.setdefault("name", user_label(merged))
+        merged.setdefault("enabled", True)
+        merged.setdefault("_summary_WXKey", config.get("WXKey", ""))
         if name and merged["name"] != name:
             raise ValueError(f"未找到用户: {name}")
         return [merged]
@@ -136,3 +176,22 @@ def save_user_cookie(path: Path, name: str, cookie: str) -> None:
             raise ValueError(f"未找到用户: {name}")
         auth["cookie"] = cookie
     path.write_text(json.dumps(root, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def validate_user_config(config: Mapping[str, Any]) -> None:
+    label = user_label(config)
+    auth = config.get("auth", {})
+    if not isinstance(auth, Mapping):
+        raise ValueError(f"{label}: auth 必须是 JSON 对象")
+    real_value(auth.get("token"), f"{label}.auth.token")
+    location = config.get("location", {})
+    if not isinstance(location, Mapping):
+        raise ValueError(f"{label}: location 必须是 JSON 对象")
+    real_value(location.get("latitude"), f"{label}.location.latitude")
+    real_value(location.get("longitude"), f"{label}.location.longitude")
+    real_value(location.get("address"), f"{label}.location.address")
+    try:
+        float(location.get("latitude"))
+        float(location.get("longitude"))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{label}: location.latitude / longitude 必须是数字") from exc

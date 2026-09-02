@@ -23,7 +23,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 import main  # noqa: E402  (root module, added to sys.path above)
-from utils.config import save_user_cookie, user_configs  # noqa: E402
+from utils.config import save_user_cookie, user_configs, validate_user_config  # noqa: E402
+from utils.notification import format_summary  # noqa: E402
 from utils.net import configured_headers, request_json  # noqa: E402
 from utils.sso import (  # noqa: E402
     encrypt_password,
@@ -204,6 +205,7 @@ class MainDryRunTests(unittest.TestCase):
         self.assertFalse(main.should_auto_send({"request": {}}))
         self.assertFalse(main.should_auto_send({}))
         self.assertTrue(main.should_auto_send({"request": {"enabled": True}}))
+        self.assertFalse(main.should_auto_send({"request": {"enabled": True}, "enabled": False}))
 
 
 class MultiUserConfigTests(unittest.TestCase):
@@ -260,6 +262,18 @@ class MultiUserConfigTests(unittest.TestCase):
             calls.clear()
             self.assertEqual(main.main(["--dry-run", "--user", "李四"]), 0)
             self.assertEqual(calls, ["李四"])
+
+    def test_disabled_user_is_skipped(self):
+        root = {
+            "app": {"base_url": "http://127.0.0.1:1"},
+            "request": {"enabled": True},
+            "users": [
+                {"name": "张三", "enabled": False, "auth": {"token": "t1"}, "location": {"latitude": 1, "longitude": 2, "address": "A"}},
+            ],
+        }
+        with mock.patch.object(main, "load_config", return_value=root), mock.patch.object(main, "run") as run:
+            self.assertEqual(main.main([]), 0)
+            run.assert_not_called()
 
 
 class MainHeaderTests(unittest.TestCase):
@@ -438,6 +452,56 @@ class SsoHelperTests(unittest.TestCase):
         self.assertEqual(saved["users"][0]["auth"]["cookie"], "JSESSIONID=new")
         self.assertEqual(saved["users"][0]["auth"]["token"], "t1")
         self.assertEqual(saved["users"][1]["auth"]["cookie"], "old-2")
+
+
+class SummaryAndValidationTests(unittest.TestCase):
+    def test_format_summary_all_success(self):
+        title, desp = format_summary(
+            [
+                {"name": "张三", "status": "success"},
+                {"name": "李四", "status": "already_signed", "reason": "已签到"},
+            ]
+        )
+        self.assertEqual(title, "全部签到成功")
+        self.assertIn("张三成功", desp)
+        self.assertIn("李四成功", desp)
+
+    def test_format_summary_partial_failure_with_reason(self):
+        title, desp = format_summary(
+            [
+                {"name": "张三", "status": "success"},
+                {"name": "李四", "status": "failed", "reason": "cookie错误"},
+            ]
+        )
+        self.assertEqual(title, "部分失败")
+        self.assertIn("李四失败，原因：cookie错误", desp)
+
+    def test_validate_user_config_requires_token_and_location(self):
+        with self.assertRaises(ValueError):
+            validate_user_config({"name": "张三", "auth": {"token": ""}, "location": {"latitude": 1, "longitude": 2, "address": "A"}})
+
+    def test_classify_reason_cookie(self):
+        self.assertEqual(main.classify_reason(ValueError("服务端判定当前会话未登录")), "cookie错误")
+        self.assertEqual(main.classify_reason(ValueError("init.action 网络错误: timed out")), "网络超时")
+
+    def test_refresh_cookie_flag_skips_sign_in(self):
+        root = {
+            "app": {"base_url": "http://127.0.0.1:1"},
+            "request": {"enabled": True},
+            "users": [
+                {
+                    "name": "张三",
+                    "auth": {"username": "u", "password": "p", "token": "t1"},
+                    "location": {"latitude": 1, "longitude": 2, "address": "A"},
+                }
+            ],
+        }
+        with mock.patch.object(main, "load_config", return_value=root), mock.patch.object(
+            main, "refresh_session_cookie"
+        ) as refresh, mock.patch.object(main, "run") as run:
+            self.assertEqual(main.main(["--refresh-cookie"]), 0)
+            refresh.assert_called_once()
+            run.assert_not_called()
 
 
 if __name__ == "__main__":
