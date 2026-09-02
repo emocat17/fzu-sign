@@ -158,9 +158,10 @@ class MainDryRunTests(unittest.TestCase):
                 main.run(config, send=True)
         self.assertIn("不在服务端返回的签到时间窗口", str(ctx.exception))
 
-    def test_send_with_auto_yes_submits_matched_campus_and_exits_zero(self):
-        # In-window, not-yet-signed account: --yes path must run check.action,
-        # use the matched campus for clockIn, and submit without a prompt.
+    def test_send_submits_matched_campus_and_exits_zero(self):
+        # In-window, not-yet-signed account with request.enabled=true: plain
+        # send must run check.action, use the matched campus for clockIn, and
+        # submit without any interactive prompt.
         init = json.loads(json.dumps(_INIT_OK))
         init["data"]["statusData"] = {"status": "UNSIGNED"}
         init["data"]["paramsData"].update({"FStartTime": "00:00", "FEndTime": "23:59"})
@@ -182,11 +183,18 @@ class MainDryRunTests(unittest.TestCase):
             config["request"] = {"enabled": True}
             output = io.StringIO()
             with redirect_stdout(output):
-                code = main.run(config, send=True, auto_yes=True)
+                code = main.run(config, send=True)
         self.assertEqual(code, 0)
-        self.assertIn("跳过二次确认", output.getvalue())
         self.assertIn("旗山校区", output.getvalue())
         self.assertIn("clockIn.action", output.getvalue())
+
+    def test_request_enabled_is_the_single_send_switch(self):
+        # Plain `python main.py` signs in iff request.enabled is exactly true.
+        self.assertFalse(main.should_auto_send({"request": {"enabled": False}}))
+        self.assertFalse(main.should_auto_send({"request": {"enabled": "true"}}))
+        self.assertFalse(main.should_auto_send({"request": {}}))
+        self.assertFalse(main.should_auto_send({}))
+        self.assertTrue(main.should_auto_send({"request": {"enabled": True}}))
 
 
 class MainHeaderTests(unittest.TestCase):

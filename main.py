@@ -36,7 +36,6 @@ DEFAULT_CONFIG = ROOT / "data.json"
 H5_AES_KEY = "apexinfoapexinfo"
 H5_PATH_PREFIX = "/livecloud/project/fzu/attn/"
 PLACEHOLDERS = {"", "XXXXX", "<redacted>", "<runtime>", "<actual>"}
-CONFIRM_WORD = "CONFIRM"
 
 
 def load_config(path: Path) -> dict[str, Any]:
@@ -429,7 +428,7 @@ def print_preview(config: Mapping[str, Any], init_data: Mapping[str, Any], times
     _ = status
 
 
-def run(config: Mapping[str, Any], send: bool, auto_yes: bool = False) -> int:
+def run(config: Mapping[str, Any], send: bool) -> int:
     init_data = fetch_init(config)
     timestamp = fetch_server_timestamp(config)
     if not send:
@@ -465,13 +464,8 @@ def run(config: Mapping[str, Any], send: bool, auto_yes: bool = False) -> int:
         matched_campus=matched,
     )
     matched_name = str(matched.get("title") or matched.get("name") or matched.get("FName") or "") if matched else ""
-    print(f"即将向 {api_url(config, 'clockIn.action')} 发送一次真实签到请求。")
+    print(f"将提交一次真实签到请求到 {api_url(config, 'clockIn.action')}")
     print(f"定位命中校区：{matched_name or '（未识别）'}；提交字段：{', '.join(clock_payload)}")
-    if auto_yes:
-        print("已授权 --yes，跳过二次确认（request.enabled=true + --send + --yes 三重开关）。")
-    elif input(f"输入 {CONFIRM_WORD} 才继续：").strip() != CONFIRM_WORD:
-        print("未输入确认词，已取消。")
-        return 2
     query = aes_query_value(clock_payload, config)
     result = unwrap_success(
         request_json(config, "clockIn.action", "GET", query={"param": query}), "clockIn.action"
@@ -481,18 +475,24 @@ def run(config: Mapping[str, Any], send: bool, auto_yes: bool = False) -> int:
     return 0
 
 
+def should_auto_send(config: Mapping[str, Any]) -> bool:
+    """The single arming switch: ``python main.py`` signs in iff enabled=true."""
+    request_config = config.get("request", {})
+    return isinstance(request_config, Mapping) and request_config.get("enabled") is True
+
+
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="晚点名签到协议预览/授权测试运行器")
+    parser = argparse.ArgumentParser(description="晚点名签到：request.enabled=true 时一键签到，否则只读预览")
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
-    parser.add_argument("--send", action="store_true", help="执行范围校验并在确认后发送一次签到")
     parser.add_argument(
-        "--yes",
+        "--dry-run",
         action="store_true",
-        help="在 request.enabled=true 且校验通过时跳过二次确认直接发送（仅在你明确授权时使用）",
+        help="即使 request.enabled=true 也只做只读预览，不发送签到",
     )
     args = parser.parse_args(argv)
+    config = load_config(args.config)
     try:
-        return run(load_config(args.config), send=args.send, auto_yes=args.yes)
+        return run(config, send=False if args.dry_run else should_auto_send(config))
     except (ValueError, TypeError, KeyError) as exc:
         print(f"配置/协议错误: {exc}", file=sys.stderr)
         return 2
