@@ -30,6 +30,24 @@ def _ca_is_no(config: Mapping[str, Any]) -> str:
     return str(clock_in.get("caIsNo", "0")) if isinstance(clock_in, Mapping) else "0"
 
 
+def notify_signed(config: Mapping[str, Any], text: str, desp: str) -> None:
+    """Send a WeChat push after a sign-in outcome, best-effort.
+
+    Reads the Server酱 key from the top-level ``WXKey`` field; skips silently
+    when it is absent. Imported lazily so a notification failure never breaks
+    the core sign-in flow.
+    """
+    key = config.get("WXKey")
+    if not key or not str(key).strip():
+        return
+    try:
+        from utils.notification import wx_send
+
+        wx_send(str(key), text=text, desp=desp)
+    except Exception as exc:
+        print(f"[通知] 发送失败，已跳过：{exc}", file=sys.stderr)
+
+
 def print_preview(config: Mapping[str, Any], init_data: Mapping[str, Any], timestamp: int) -> None:
     latitude, longitude, address = payload.location_values(config)
     clock_payload = payload.build_clock_in_payload(
@@ -72,6 +90,7 @@ def run(config: Mapping[str, Any], send: bool) -> int:
         raise ValueError("request.enabled 必须明确设置为 true")
     if protocol.status_success(init_data):
         print("服务端已显示签到成功，停止，不重复提交。")
+        notify_signed(config, "晚点名已签到", "服务端状态为成功/处理中，无需重复提交。")
         return 0
     params = init_data.get("paramsData", {})
     if not isinstance(params, Mapping) or not schedule.in_time_window(
@@ -104,6 +123,7 @@ def run(config: Mapping[str, Any], send: bool) -> int:
     )
     print(f"clockIn.action 返回结构：{protocol.response_shape(result)}")
     print("已完成一次请求；请在 App 页面核对服务端状态。")
+    notify_signed(config, "晚点名签到成功", f"定位命中校区：{matched_name or '未知'}；服务端已接受请求。")
     return 0
 
 
