@@ -429,7 +429,7 @@ def print_preview(config: Mapping[str, Any], init_data: Mapping[str, Any], times
     _ = status
 
 
-def run(config: Mapping[str, Any], send: bool) -> int:
+def run(config: Mapping[str, Any], send: bool, auto_yes: bool = False) -> int:
     init_data = fetch_init(config)
     timestamp = fetch_server_timestamp(config)
     if not send:
@@ -454,6 +454,7 @@ def run(config: Mapping[str, Any], send: bool) -> int:
     )
     if not isinstance(check_data, list) or not check_data:
         raise ValueError("check.action 未返回匹配校区，停止发送")
+    matched = check_data[0] if isinstance(check_data[0], Mapping) else None
     clock_payload = build_clock_in_payload(
         init_data,
         latitude=latitude,
@@ -461,10 +462,14 @@ def run(config: Mapping[str, Any], send: bool) -> int:
         address=address,
         server_timestamp=timestamp,
         ca_is_no=str(config.get("clock_in", {}).get("caIsNo", "0")) if isinstance(config.get("clock_in"), Mapping) else "0",
+        matched_campus=matched,
     )
+    matched_name = str(matched.get("title") or matched.get("name") or matched.get("FName") or "") if matched else ""
     print(f"即将向 {api_url(config, 'clockIn.action')} 发送一次真实签到请求。")
-    print(f"字段：{', '.join(clock_payload)}")
-    if input(f"输入 {CONFIRM_WORD} 才继续：").strip() != CONFIRM_WORD:
+    print(f"定位命中校区：{matched_name or '（未识别）'}；提交字段：{', '.join(clock_payload)}")
+    if auto_yes:
+        print("已授权 --yes，跳过二次确认（request.enabled=true + --send + --yes 三重开关）。")
+    elif input(f"输入 {CONFIRM_WORD} 才继续：").strip() != CONFIRM_WORD:
         print("未输入确认词，已取消。")
         return 2
     query = aes_query_value(clock_payload, config)
@@ -479,10 +484,15 @@ def run(config: Mapping[str, Any], send: bool) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="晚点名签到协议预览/授权测试运行器")
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
-    parser.add_argument("--send", action="store_true", help="执行范围校验并在二次确认后发送一次签到")
+    parser.add_argument("--send", action="store_true", help="执行范围校验并在确认后发送一次签到")
+    parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="在 request.enabled=true 且校验通过时跳过二次确认直接发送（仅在你明确授权时使用）",
+    )
     args = parser.parse_args(argv)
     try:
-        return run(load_config(args.config), send=args.send)
+        return run(load_config(args.config), send=args.send, auto_yes=args.yes)
     except (ValueError, TypeError, KeyError) as exc:
         print(f"配置/协议错误: {exc}", file=sys.stderr)
         return 2

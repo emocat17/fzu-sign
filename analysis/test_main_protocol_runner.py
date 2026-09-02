@@ -47,8 +47,9 @@ class _JsonServer:
                 content_length = int(self.headers.get("Content-Length", 0) or 0)
                 if content_length:
                     body_bytes = self.rfile.read(content_length)
+                path_no_query = self.path.split("?", 1)[0].rstrip("/")
                 for suffix, (status, payload) in routes.items():
-                    if self.path.rstrip("/").endswith(suffix):
+                    if path_no_query.endswith(suffix):
                         if isinstance(payload, (dict, list)):
                             raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
                         elif isinstance(payload, str):
@@ -156,6 +157,36 @@ class MainDryRunTests(unittest.TestCase):
             with self.assertRaises(ValueError) as ctx:
                 main.run(config, send=True)
         self.assertIn("不在服务端返回的签到时间窗口", str(ctx.exception))
+
+    def test_send_with_auto_yes_submits_matched_campus_and_exits_zero(self):
+        # In-window, not-yet-signed account: --yes path must run check.action,
+        # use the matched campus for clockIn, and submit without a prompt.
+        init = json.loads(json.dumps(_INIT_OK))
+        init["data"]["statusData"] = {"status": "UNSIGNED"}
+        init["data"]["paramsData"].update({"FStartTime": "00:00", "FEndTime": "23:59"})
+        check_ok = {
+            "success": True,
+            "code": 1,
+            "data": [{"id": "2", "title": "旗山校区"}],
+        }
+        clock_ok = {"success": True, "code": 1, "data": {"attn": "ok"}}
+        with _JsonServer(
+            {
+                "init.action": (200, init),
+                "currentTimestamp.action": (200, {"success": True, "code": 1, "data": {"timestamp": 0}}),
+                "check.action": (200, check_ok),
+                "clockIn.action": (200, clock_ok),
+            }
+        ) as server:
+            config = _base_config(f"http://127.0.0.1:{server.port}")
+            config["request"] = {"enabled": True}
+            output = io.StringIO()
+            with redirect_stdout(output):
+                code = main.run(config, send=True, auto_yes=True)
+        self.assertEqual(code, 0)
+        self.assertIn("跳过二次确认", output.getvalue())
+        self.assertIn("旗山校区", output.getvalue())
+        self.assertIn("clockIn.action", output.getvalue())
 
 
 class MainHeaderTests(unittest.TestCase):
