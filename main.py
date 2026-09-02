@@ -21,10 +21,12 @@ from utils.config import (
     DEFAULT_CONFIG,
     api_url,
     load_config,
+    save_user_cookie,
     should_auto_send,
     user_configs,
     user_label,
 )
+from utils.sso import apply_cookie, auth_credentials, login_and_cookie, session_unauthenticated
 
 
 def _ca_is_no(config: Mapping[str, Any]) -> str:
@@ -80,24 +82,42 @@ def print_preview(config: Mapping[str, Any], init_data: Mapping[str, Any], times
     _ = status
 
 
-def check_session(config: Mapping[str, Any]) -> int:
+def refresh_session_cookie(config: dict[str, Any], path: Path) -> None:
+    cookie = login_and_cookie(config)
+    apply_cookie(config, cookie)
+    save_user_cookie(path, user_label(config), cookie)
+    print(f"[{user_label(config)}] 已刷新 Cookie 并写回 {path.name}")
+
+
+def with_fresh_session(config: dict[str, Any], path: Path, fetch):
+    try:
+        return fetch()
+    except ValueError as exc:
+        if not session_unauthenticated(exc) or auth_credentials(config) is None:
+            raise
+        print(f"[{user_label(config)}] Cookie 失效，正在用账号密码重新登录…")
+        refresh_session_cookie(config, path)
+        return fetch()
+
+
+def check_session(config: dict[str, Any], path: Path | None = None) -> int:
     """Read-only session precheck: validates init + server timestamp.
 
     On success prints the window/status. If the server says the session is not
-    logged in (dead Cookie/token), pushes a WeChat warning via WXKey so the user
-    refreshes it before the sign-in window opens.
+    logged in (dead Cookie/token), refreshes Cookie when username/password are
+    present; otherwise pushes a WeChat warning via WXKey.
     """
     try:
-        init_data = protocol.fetch_init(config)
+        init_data = with_fresh_session(config, path or DEFAULT_CONFIG, lambda: protocol.fetch_init(config))
         protocol.fetch_server_timestamp(config)
     except ValueError as exc:
         message = str(exc)
         print(f"[{user_label(config)}] 会话异常: {message}", file=sys.stderr)
-        if "未登录" in message:
+        if session_unauthenticated(exc):
             notify_signed(
                 config,
                 "晚点名 · 会话失效",
-                f"[{user_label(config)}] Cookie/token 已失效：请在签到前重新登录，把最新的 Cookie 与 token 填回 data.json 对应用户的 auth.cookie / auth.token。",
+                f"[{user_label(config)}] Cookie/token 已失效：请填写 auth.username / auth.password 以便自动刷新，或手动把最新 Cookie 填回 data.json。",
             )
         return 2
     print(f"[{user_label(config)}] 会话有效：init.action 与 currentTimestamp.action 均返回成功")
@@ -108,9 +128,11 @@ def check_session(config: Mapping[str, Any]) -> int:
     return 0
 
 
-def run(config: Mapping[str, Any], send: bool) -> int:
-    init_data = protocol.fetch_init(config)
-    timestamp = protocol.fetch_server_timestamp(config)
+def run(config: Mapping[str, Any], send: bool, path: Path | None = None) -> int:
+    runtime = dict(config)
+    init_data = with_fresh_session(runtime, path or DEFAULT_CONFIG, lambda: protocol.fetch_init(runtime))
+    timestamp = protocol.fetch_server_timestamp(runtime)
+    config = runtime
     if not send:
         print_preview(config, init_data, timestamp)
         print(f"\n[{user_label(config)}] DRY-RUN：未发送 check.action 或 clockIn.action。")
@@ -193,9 +215,9 @@ def main(argv: list[str] | None = None) -> int:
             print()
         try:
             if args.check:
-                code = check_session(config)
+                code = check_session(config, args.config)
             else:
-                code = run(config, send=False if args.dry_run else should_auto_send(config))
+                code = run(config, send=False if args.dry_run else should_auto_send(config), path=args.config)
         except (ValueError, TypeError, KeyError) as exc:
             print(f"[{user_label(config)}] 配置/协议错误: {exc}", file=sys.stderr)
             code = 2

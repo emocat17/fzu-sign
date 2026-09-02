@@ -23,6 +23,8 @@
     {
       "name": "张三",
       "auth": {
+        "username": "",
+        "password": "",
         "token": "",
         "cookie": ""
       },
@@ -35,6 +37,8 @@
     {
       "name": "李四",
       "auth": {
+        "username": "",
+        "password": "",
         "token": "",
         "cookie": ""
       },

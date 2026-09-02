@@ -110,3 +110,29 @@ def user_configs(config: Mapping[str, Any], name: str | None = None) -> list[dic
     if not selected:
         raise ValueError("users 数组为空")
     return selected
+
+
+def save_user_cookie(path: Path, name: str, cookie: str) -> None:
+    """Persist a refreshed Cookie back into ``data.json`` without dropping other users."""
+    root = load_config(path)
+    users = root.get("users")
+    if isinstance(users, list):
+        matched = False
+        for user in users:
+            if isinstance(user, dict) and user_label(user) == name:
+                auth = user.setdefault("auth", {})
+                if not isinstance(auth, dict):
+                    raise ValueError(f"{name} 的 auth 必须是 JSON 对象")
+                auth["cookie"] = cookie
+                matched = True
+                break
+        if not matched:
+            raise ValueError(f"未找到用户: {name}")
+    else:
+        auth = root.setdefault("auth", {})
+        if not isinstance(auth, dict):
+            raise ValueError("auth 必须是 JSON 对象")
+        if name and user_label(root) not in {name, "未命名"}:
+            raise ValueError(f"未找到用户: {name}")
+        auth["cookie"] = cookie
+    path.write_text(json.dumps(root, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

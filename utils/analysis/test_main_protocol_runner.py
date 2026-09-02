@@ -23,8 +23,13 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 import main  # noqa: E402  (root module, added to sys.path above)
-from utils.config import user_configs  # noqa: E402
+from utils.config import save_user_cookie, user_configs  # noqa: E402
 from utils.net import configured_headers, request_json  # noqa: E402
+from utils.sso import (  # noqa: E402
+    encrypt_password,
+    parse_login_page,
+    session_unauthenticated,
+)
 
 
 def _base_config(server_url: str) -> dict:
@@ -237,7 +242,7 @@ class MultiUserConfigTests(unittest.TestCase):
     def test_main_runs_each_user_and_can_filter_by_name(self):
         calls: list[str] = []
 
-        def fake_run(config, send):
+        def fake_run(config, send, path=None):
             calls.append(config["name"])
             return 0
 
@@ -366,6 +371,73 @@ class SessionCheckTests(unittest.TestCase):
             code = main.check_session(config)
         self.assertEqual(code, 2)
         notify.assert_not_called()
+
+    def test_check_session_refreshes_cookie_when_credentials_present(self):
+        config = _base_config("http://127.0.0.1:1")
+        config["name"] = "张三"
+        config["auth"] = {"username": "u1", "password": "p1", "token": "test-token", "cookie": "old"}
+        boom = ValueError("init.action 返回 HTTP 500 … 服务端判定当前会话未登录：仅 token 不够…")
+        with mock.patch("utils.protocol.fetch_init", side_effect=[boom, _INIT_OK["data"]]), mock.patch(
+            "utils.protocol.fetch_server_timestamp", return_value=1
+        ), mock.patch.object(main, "login_and_cookie", return_value="JSESSIONID=new") as login, mock.patch.object(
+            main, "save_user_cookie"
+        ) as save, mock.patch.object(main, "notify_signed") as notify:
+            code = main.check_session(config)
+        self.assertEqual(code, 0)
+        login.assert_called_once()
+        save.assert_called_once()
+        self.assertEqual(config["auth"]["cookie"], "JSESSIONID=new")
+        notify.assert_not_called()
+
+
+class SsoHelperTests(unittest.TestCase):
+    def test_parse_login_page_reads_croypto_and_flowkey(self):
+        html = """
+        <p id="login-croypto">QwjGJXuyxqUJi0ZxZlqqgA==</p>
+        <p id="login-page-flowkey">abc_flow</p>
+        <p id="captchaId"></p>
+        <p id="sso-second"></p>
+        <p id="login-error-code"></p>
+        """
+        page = parse_login_page(html)
+        self.assertEqual(page["croypto"], "QwjGJXuyxqUJi0ZxZlqqgA==")
+        self.assertEqual(page["execution"], "abc_flow")
+
+    def test_encrypt_password_is_aes_ecb_base64(self):
+        key = "QwjGJXuyxqUJi0ZxZlqqgA=="
+        cipher = encrypt_password("secret", key)
+        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+        from cryptography.hazmat.primitives import padding
+        import base64
+
+        raw = base64.b64decode(cipher)
+        decryptor = Cipher(algorithms.AES(base64.b64decode(key)), modes.ECB()).decryptor()
+        padded = decryptor.update(raw) + decryptor.finalize()
+        unpadder = padding.PKCS7(algorithms.AES.block_size).unpadder()
+        plain = unpadder.update(padded) + unpadder.finalize()
+        self.assertEqual(plain.decode("utf-8"), "secret")
+
+    def test_session_unauthenticated_detects_login_markers(self):
+        self.assertTrue(session_unauthenticated(ValueError("服务端判定当前会话未登录")))
+        self.assertFalse(session_unauthenticated(ValueError("网络错误: timed out")))
+
+    def test_save_user_cookie_updates_only_that_user(self):
+        import tempfile
+
+        payload = {
+            "users": [
+                {"name": "张三", "auth": {"cookie": "old-1", "token": "t1"}},
+                {"name": "other", "auth": {"cookie": "old-2", "token": "t2"}},
+            ]
+        }
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "data.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            save_user_cookie(path, "张三", "JSESSIONID=new")
+            saved = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(saved["users"][0]["auth"]["cookie"], "JSESSIONID=new")
+        self.assertEqual(saved["users"][0]["auth"]["token"], "t1")
+        self.assertEqual(saved["users"][1]["auth"]["cookie"], "old-2")
 
 
 if __name__ == "__main__":
