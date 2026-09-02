@@ -23,6 +23,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 import main  # noqa: E402  (root module, added to sys.path above)
+from utils.config import user_configs  # noqa: E402
 from utils.net import configured_headers, request_json  # noqa: E402
 
 
@@ -198,6 +199,62 @@ class MainDryRunTests(unittest.TestCase):
         self.assertFalse(main.should_auto_send({"request": {}}))
         self.assertFalse(main.should_auto_send({}))
         self.assertTrue(main.should_auto_send({"request": {"enabled": True}}))
+
+
+class MultiUserConfigTests(unittest.TestCase):
+    def test_legacy_single_user_config_still_works(self):
+        configs = user_configs(_base_config("http://127.0.0.1:1"))
+        self.assertEqual(len(configs), 1)
+        self.assertEqual(configs[0]["auth"]["token"], "test-token")
+
+    def test_users_inherit_shared_app_and_keep_own_auth_location(self):
+        root = {
+            "app": {"base_url": "https://example.test", "user_agent": "ua"},
+            "request": {"enabled": True, "headers": {"Cookie": "${auth.cookie}"}},
+            "encryption": {"key": "apexinfoapexinfo", "iv": "apexinfoapexinfo"},
+            "WXKey": "shared-key",
+            "users": [
+                {
+                    "name": "张三",
+                    "auth": {"token": "t1", "cookie": "c1"},
+                    "location": {"latitude": "1", "longitude": "2", "address": "A"},
+                },
+                {
+                    "name": "李四",
+                    "auth": {"token": "t2", "cookie": "c2"},
+                    "location": {"latitude": "3", "longitude": "4", "address": "B"},
+                },
+            ],
+        }
+        configs = user_configs(root)
+        self.assertEqual([item["name"] for item in configs], ["张三", "李四"])
+        self.assertEqual(configs[0]["app"]["base_url"], "https://example.test")
+        self.assertEqual(configs[1]["WXKey"], "shared-key")
+        self.assertEqual(configs[0]["auth"]["token"], "t1")
+        self.assertEqual(configs[1]["location"]["address"], "B")
+        self.assertEqual([item["name"] for item in user_configs(root, "李四")], ["李四"])
+
+    def test_main_runs_each_user_and_can_filter_by_name(self):
+        calls: list[str] = []
+
+        def fake_run(config, send):
+            calls.append(config["name"])
+            return 0
+
+        root = {
+            "app": {"base_url": "http://127.0.0.1:1"},
+            "request": {"enabled": False},
+            "users": [
+                {"name": "张三", "auth": {"token": "t1"}, "location": {"latitude": 1, "longitude": 2, "address": "A"}},
+                {"name": "李四", "auth": {"token": "t2"}, "location": {"latitude": 3, "longitude": 4, "address": "B"}},
+            ],
+        }
+        with mock.patch.object(main, "load_config", return_value=root), mock.patch.object(main, "run", side_effect=fake_run):
+            self.assertEqual(main.main(["--dry-run"]), 0)
+            self.assertEqual(calls, ["张三", "李四"])
+            calls.clear()
+            self.assertEqual(main.main(["--dry-run", "--user", "李四"]), 0)
+            self.assertEqual(calls, ["李四"])
 
 
 class MainHeaderTests(unittest.TestCase):

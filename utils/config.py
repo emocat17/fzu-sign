@@ -14,6 +14,8 @@ H5_AES_KEY = "apexinfoapexinfo"
 H5_PATH_PREFIX = "/livecloud/project/fzu/attn/"
 PLACEHOLDERS = {"", "XXXXX", "<redacted>", "<runtime>", "<actual>"}
 
+SHARED_KEYS = ("app", "clock_in", "request", "encryption", "timeout_seconds", "WXKey")
+
 
 def load_config(path: Path) -> dict[str, Any]:
     try:
@@ -61,3 +63,50 @@ def should_auto_send(config: Mapping[str, Any]) -> bool:
     """The single arming switch: ``python main.py`` signs in iff enabled=true."""
     request_config = config.get("request", {})
     return isinstance(request_config, Mapping) and request_config.get("enabled") is True
+
+
+def user_label(config: Mapping[str, Any]) -> str:
+    name = config.get("name")
+    text = str(name).strip() if name is not None else ""
+    return text or "未命名"
+
+
+def _merge_user(shared: Mapping[str, Any], user: Mapping[str, Any]) -> dict[str, Any]:
+    merged = dict(shared)
+    for key, value in user.items():
+        if key == "name":
+            continue
+        merged[key] = value
+    merged["name"] = user_label(user)
+    return merged
+
+
+def user_configs(config: Mapping[str, Any], name: str | None = None) -> list[dict[str, Any]]:
+    """Expand a root config into per-user runtime configs.
+
+    Shared fields (``app`` / ``encryption`` / ``request`` / ``WXKey`` / …) stay
+    at the root. Each ``users[]`` entry supplies ``name``, ``auth`` and
+    ``location``. Legacy single-user files without ``users`` still work.
+    """
+    users = config.get("users")
+    if not isinstance(users, list):
+        merged = dict(config)
+        merged.setdefault("name", user_label(merged))
+        if name and merged["name"] != name:
+            raise ValueError(f"未找到用户: {name}")
+        return [merged]
+    if not users:
+        raise ValueError("users 数组为空")
+    shared = {key: config[key] for key in SHARED_KEYS if key in config}
+    selected: list[dict[str, Any]] = []
+    for index, user in enumerate(users):
+        if not isinstance(user, Mapping):
+            raise ValueError(f"users[{index}] 必须是 JSON 对象")
+        merged = _merge_user(shared, user)
+        if name is None or merged["name"] == name:
+            selected.append(merged)
+    if name and not selected:
+        raise ValueError(f"未找到用户: {name}")
+    if not selected:
+        raise ValueError("users 数组为空")
+    return selected

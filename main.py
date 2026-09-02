@@ -22,6 +22,8 @@ from utils.config import (
     api_url,
     load_config,
     should_auto_send,
+    user_configs,
+    user_label,
 )
 
 
@@ -49,6 +51,7 @@ def notify_signed(config: Mapping[str, Any], text: str, desp: str) -> None:
 
 
 def print_preview(config: Mapping[str, Any], init_data: Mapping[str, Any], timestamp: int) -> None:
+    print(f"[{user_label(config)}]")
     latitude, longitude, address = payload.location_values(config)
     clock_payload = payload.build_clock_in_payload(
         init_data,
@@ -89,15 +92,15 @@ def check_session(config: Mapping[str, Any]) -> int:
         protocol.fetch_server_timestamp(config)
     except ValueError as exc:
         message = str(exc)
-        print(f"会话异常: {message}", file=sys.stderr)
+        print(f"[{user_label(config)}] 会话异常: {message}", file=sys.stderr)
         if "未登录" in message:
             notify_signed(
                 config,
                 "晚点名 · 会话失效",
-                "Cookie/token 已失效：请在签到前重新登录，把最新的 Cookie 与 token 填回 data.json 的 auth.cookie / auth.token。",
+                f"[{user_label(config)}] Cookie/token 已失效：请在签到前重新登录，把最新的 Cookie 与 token 填回 data.json 对应用户的 auth.cookie / auth.token。",
             )
         return 2
-    print("会话有效：init.action 与 currentTimestamp.action 均返回成功")
+    print(f"[{user_label(config)}] 会话有效：init.action 与 currentTimestamp.action 均返回成功")
     params = init_data.get("paramsData", {})
     if isinstance(params, Mapping):
         print(f"签到窗口: {params.get('FStartTime', '?')} - {params.get('FEndTime', '?')}")
@@ -110,15 +113,15 @@ def run(config: Mapping[str, Any], send: bool) -> int:
     timestamp = protocol.fetch_server_timestamp(config)
     if not send:
         print_preview(config, init_data, timestamp)
-        print("\nDRY-RUN：未发送 check.action 或 clockIn.action。")
+        print(f"\n[{user_label(config)}] DRY-RUN：未发送 check.action 或 clockIn.action。")
         return 0
 
     request_config = config.get("request", {})
     if not isinstance(request_config, Mapping) or request_config.get("enabled") is not True:
         raise ValueError("request.enabled 必须明确设置为 true")
     if protocol.status_success(init_data):
-        print("服务端已显示签到成功，停止，不重复提交。")
-        notify_signed(config, "晚点名已签到", "服务端状态为成功/处理中，无需重复提交。")
+        print(f"[{user_label(config)}] 服务端已显示签到成功，停止，不重复提交。")
+        notify_signed(config, f"晚点名已签到 · {user_label(config)}", "服务端状态为成功/处理中，无需重复提交。")
         return 0
     params = init_data.get("paramsData", {})
     if not isinstance(params, Mapping) or not schedule.in_time_window(
@@ -143,21 +146,26 @@ def run(config: Mapping[str, Any], send: bool) -> int:
         matched_campus=matched,
     )
     matched_name = str(matched.get("title") or matched.get("name") or matched.get("FName") or "") if matched else ""
-    print(f"将提交一次真实签到请求到 {api_url(config, 'clockIn.action')}")
-    print(f"定位命中校区：{matched_name or '（未识别）'}；提交字段：{', '.join(clock_payload)}")
+    print(f"[{user_label(config)}] 将提交一次真实签到请求到 {api_url(config, 'clockIn.action')}")
+    print(f"[{user_label(config)}] 定位命中校区：{matched_name or '（未识别）'}；提交字段：{', '.join(clock_payload)}")
     query = crypto.aes_query_value(clock_payload, config)
     result = net.unwrap_success(
         net.request_json(config, "clockIn.action", "GET", query={"param": query}), "clockIn.action"
     )
-    print(f"clockIn.action 返回结构：{protocol.response_shape(result)}")
-    print("已完成一次请求；请在 App 页面核对服务端状态。")
-    notify_signed(config, "晚点名签到成功", f"定位命中校区：{matched_name or '未知'}；服务端已接受请求。")
+    print(f"[{user_label(config)}] clockIn.action 返回结构：{protocol.response_shape(result)}")
+    print(f"[{user_label(config)}] 已完成一次请求；请在 App 页面核对服务端状态。")
+    notify_signed(
+        config,
+        f"晚点名签到成功 · {user_label(config)}",
+        f"定位命中校区：{matched_name or '未知'}；服务端已接受请求。",
+    )
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="晚点名签到：request.enabled=true 时一键签到，否则只读预览")
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    parser.add_argument("--user", type=str, help="指定要操作的用户名称（可选，多用户模式）")
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -174,13 +182,26 @@ def main(argv: list[str] | None = None) -> int:
         print("首次使用请先复制模板再填写：copy data.json.example data.json", file=sys.stderr)
         return 2
     try:
-        config = load_config(args.config)
-        if args.check:
-            return check_session(config)
-        return run(config, send=False if args.dry_run else should_auto_send(config))
+        root = load_config(args.config)
+        configs = user_configs(root, args.user)
     except (ValueError, TypeError, KeyError) as exc:
         print(f"配置/协议错误: {exc}", file=sys.stderr)
         return 2
+    failed = 0
+    for index, config in enumerate(configs):
+        if index:
+            print()
+        try:
+            if args.check:
+                code = check_session(config)
+            else:
+                code = run(config, send=False if args.dry_run else should_auto_send(config))
+        except (ValueError, TypeError, KeyError) as exc:
+            print(f"[{user_label(config)}] 配置/协议错误: {exc}", file=sys.stderr)
+            code = 2
+        if code != 0:
+            failed = code
+    return failed
 
 
 if __name__ == "__main__":
