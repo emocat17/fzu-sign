@@ -358,8 +358,9 @@ class SessionCheckTests(unittest.TestCase):
             config = _base_config(f"http://127.0.0.1:{server.port}")
             output = io.StringIO()
             with mock.patch.object(main, "notify_signed") as notify, redirect_stdout(output):
-                code = main.check_session(config)
+                code, reason = main.check_session(config)
         self.assertEqual(code, 0)
+        self.assertEqual(reason, "")
         self.assertIn("会话有效", output.getvalue())
         notify.assert_not_called()
 
@@ -370,8 +371,9 @@ class SessionCheckTests(unittest.TestCase):
         with mock.patch("utils.protocol.fetch_init", side_effect=boom), mock.patch.object(
             main, "notify_signed"
         ) as notify, redirect_stderr(err):
-            code = main.check_session(config)
+            code, reason = main.check_session(config)
         self.assertEqual(code, 2)
+        self.assertEqual(reason, "cookie错误")
         self.assertIn("会话异常", err.getvalue())
         notify.assert_called_once()
         text = notify.call_args[0][1]
@@ -383,8 +385,9 @@ class SessionCheckTests(unittest.TestCase):
         with mock.patch("utils.protocol.fetch_init", side_effect=boom), mock.patch.object(
             main, "notify_signed"
         ) as notify:
-            code = main.check_session(config)
+            code, reason = main.check_session(config)
         self.assertEqual(code, 2)
+        self.assertEqual(reason, "网络超时")
         notify.assert_not_called()
 
     def test_missing_cookie_logs_in_before_first_request(self):
@@ -396,8 +399,9 @@ class SessionCheckTests(unittest.TestCase):
         ), mock.patch.object(main, "login_and_session", return_value=("JSESSIONID=new", "tok-new")) as login, mock.patch.object(
             main, "save_user_auth"
         ):
-            code = main.check_session(config)
+            code, reason = main.check_session(config)
         self.assertEqual(code, 0)
+        self.assertEqual(reason, "")
         login.assert_called_once()
         self.assertEqual(config["auth"]["cookie"], "JSESSIONID=new")
         self.assertEqual(config["auth"]["token"], "tok-new")
@@ -412,8 +416,9 @@ class SessionCheckTests(unittest.TestCase):
         ), mock.patch.object(main, "login_and_session", return_value=("JSESSIONID=new", "tok-new")) as login, mock.patch.object(
             main, "save_user_auth"
         ) as save, mock.patch.object(main, "notify_signed") as notify:
-            code = main.check_session(config)
+            code, reason = main.check_session(config)
         self.assertEqual(code, 0)
+        self.assertEqual(reason, "")
         login.assert_called_once()
         save.assert_called_once()
         self.assertEqual(config["auth"]["cookie"], "JSESSIONID=new")

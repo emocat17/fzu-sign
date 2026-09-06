@@ -51,6 +51,8 @@ def classify_reason(exc: BaseException) -> str:
     lowered = message.lower()
     if session_unauthenticated(exc) or "cookie" in lowered or "未登录" in message:
         return "cookie错误"
+    if "sso 暂时不可用" in lowered:
+        return "网络超时"
     if "sso" in lowered or "auth.username" in message or "auth.password" in message:
         return "登录失败"
     if "auth.token" in message or "缺少 token" in message:
@@ -143,27 +145,27 @@ def with_fresh_session(config: dict[str, Any], path: Path, fetch):
         return fetch()
 
 
-def check_session(config: dict[str, Any], path: Path | None = None) -> int:
+def check_session(config: dict[str, Any], path: Path | None = None) -> tuple[int, str]:
     """Read-only session precheck: validates init + server timestamp."""
     try:
         init_data = with_fresh_session(config, path or DEFAULT_CONFIG, lambda: protocol.fetch_init(config))
         protocol.fetch_server_timestamp(config)
     except ValueError as exc:
-        message = str(exc)
-        write_log(f"[{user_label(config)}] 会话异常: {message}", error=True)
+        reason = classify_reason(exc)
+        write_log(f"[{user_label(config)}] 会话异常: {exc}", error=True)
         if session_unauthenticated(exc):
             notify_signed(
                 config,
                 "晚点名 · 会话失效",
-                f"[{user_label(config)}] {classify_reason(exc)}：{message}",
+                f"[{user_label(config)}] {reason}：{exc}",
             )
-        return 2
+        return 2, reason
     write_log(f"[{user_label(config)}] 会话有效：init.action 与 currentTimestamp.action 均返回成功")
     params = init_data.get("paramsData", {})
     if isinstance(params, Mapping):
         write_log(f"签到窗口: {params.get('FStartTime', '?')} - {params.get('FEndTime', '?')}")
     write_log(f"当前状态: {'已签到（不重复）' if protocol.status_success(init_data) else '未签到'}")
-    return 0
+    return 0, ""
 
 
 def run(config: Mapping[str, Any], send: bool, path: Path | None = None) -> int:
@@ -239,10 +241,10 @@ def handle_user(config: dict[str, Any], args: argparse.Namespace) -> dict[str, A
             return _result(name, "refreshed", 0, "已刷新Cookie/token")
         validate_user_config(config)
         if args.check:
-            code = check_session(config, args.config)
+            code, reason = check_session(config, args.config)
             if code == 0:
                 return _result(name, "session_ok", 0)
-            return _result(name, "failed", code, "会话异常")
+            return _result(name, "failed", code, reason)
         send = False if args.dry_run else should_auto_send(config)
         code = run(config, send=send, path=args.config)
         if args.dry_run or not send:

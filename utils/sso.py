@@ -4,17 +4,22 @@ from __future__ import annotations
 
 import base64
 import re
+import time
 from collections.abc import Mapping
 from http.cookiejar import CookieJar
 from typing import Any
 from urllib.parse import parse_qs, urljoin, urlparse
 
-from utils.config import PLACEHOLDERS, base_url, real_value, timeout_seconds
+from utils.config import PLACEHOLDERS, base_url, real_value, retry_times, timeout_seconds
 
 SSO_ORIGIN = "https://sso.fzu.edu.cn"
 AUTHORIZE_PATH = "/livecloud/project/fzu/attn/oauth2/authorize.action"
 INDEX_PATH = "/plug-in/livecloud/project/fzu/attn/index.action"
 LOGIN_MARKERS = ("请先登录", "请登录", "未登录", "登录后操作", "先登录", "not logged", "login first")
+SSO_BROWSER_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+)
 
 
 def session_unauthenticated(exc: BaseException) -> bool:
@@ -143,6 +148,11 @@ def _user_agent(config: Mapping[str, Any]) -> str:
     return "Mozilla/5.0"
 
 
+def _sso_headers(config: Mapping[str, Any]) -> dict[str, str]:
+    _ = config
+    return {"User-Agent": SSO_BROWSER_UA, "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}
+
+
 def apply_session(config: dict[str, Any], cookie: str, token: str = "") -> None:
     auth = config.setdefault("auth", {})
     if not isinstance(auth, dict):
@@ -176,21 +186,50 @@ def _jar_cookie(session: Any) -> str:
     return cookie
 
 
+def _transient_sso_status(status: int, html: str) -> bool:
+    if status in {502, 503, 504}:
+        return True
+    return status == 401 and "login-croypto" not in html
+
+
+def _usable_login_page(response: Any) -> bool:
+    text = getattr(response, "text", "") or ""
+    return "login-croypto" in text or bool(extract_token(getattr(response, "url", ""), text))
+
+
 def _open_authorize(session: Any, config: Mapping[str, Any], headers: Mapping[str, str], timeout: float):
+    import requests
+
     origin = base_url(config)
     service = f"{origin}/livecloud/project/fzu/attn/oauth2/callback.action"
     authorize = urljoin(origin + "/", AUTHORIZE_PATH.lstrip("/"))
-    response = session.get(authorize, headers=headers, timeout=timeout, allow_redirects=True)
-    if response.status_code >= 400:
-        response = session.get(
-            f"{SSO_ORIGIN}/login",
-            params={"service": service},
-            headers=headers,
-            timeout=timeout,
-            allow_redirects=True,
-        )
-    response.raise_for_status()
-    return response
+    last_error: Exception | None = None
+    attempts = retry_times(config)
+    for attempt in range(1, attempts + 1):
+        try:
+            response = session.get(authorize, headers=headers, timeout=timeout, allow_redirects=True)
+            if not _usable_login_page(response):
+                response = session.get(
+                    f"{SSO_ORIGIN}/login",
+                    params={"service": service},
+                    headers=headers,
+                    timeout=timeout,
+                    allow_redirects=True,
+                )
+            if _usable_login_page(response):
+                return response
+            if _transient_sso_status(response.status_code, response.text):
+                last_error = ValueError(f"SSO 暂时不可用（HTTP {response.status_code}），请稍后重试")
+            else:
+                response.raise_for_status()
+                return response
+        except requests.RequestException as exc:
+            last_error = ValueError(f"SSO 暂时不可用：{exc}")
+        if attempt < attempts:
+            time.sleep(min(attempt, 3))
+    if last_error:
+        raise last_error
+    raise ValueError("SSO 登录页打开失败")
 
 
 def login_and_session(config: Mapping[str, Any]) -> tuple[str, str]:
@@ -205,7 +244,7 @@ def login_and_session(config: Mapping[str, Any]) -> tuple[str, str]:
     if creds is None and not cookie_header:
         raise ValueError("未填写 Cookie 或账号密码，无法自动刷新会话")
     timeout = timeout_seconds(config)
-    headers = {"User-Agent": _user_agent(config), "Accept": "text/html,application/xhtml+xml"}
+    headers = _sso_headers(config)
     session = requests.Session()
     try:
         if cookie_header:
@@ -230,13 +269,28 @@ def login_and_session(config: Mapping[str, Any]) -> tuple[str, str]:
             "croypto": page["croypto"],
             "captcha_code": "",
         }
-        posted = session.post(
-            response.url,
-            data=payload,
-            headers={**headers, "Content-Type": "application/x-www-form-urlencoded"},
-            timeout=timeout,
-            allow_redirects=True,
-        )
+        posted = None
+        last_post_error: Exception | None = None
+        for attempt in range(1, retry_times(config) + 1):
+            try:
+                posted = session.post(
+                    response.url,
+                    data=payload,
+                    headers={**headers, "Content-Type": "application/x-www-form-urlencoded"},
+                    timeout=timeout,
+                    allow_redirects=True,
+                )
+                if posted.status_code in {502, 503, 504}:
+                    last_post_error = ValueError(f"SSO 暂时不可用（HTTP {posted.status_code}），请稍后重试")
+                    posted = None
+                else:
+                    break
+            except requests.RequestException as exc:
+                last_post_error = ValueError(f"SSO 暂时不可用：{exc}")
+            if attempt < retry_times(config):
+                time.sleep(min(attempt, 3))
+        if posted is None:
+            raise last_post_error or ValueError("SSO 登录提交失败")
         posted.raise_for_status()
         if "sso.fzu.edu.cn/login" in posted.url:
             extra = ""
