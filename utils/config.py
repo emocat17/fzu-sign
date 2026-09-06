@@ -15,7 +15,7 @@ H5_PATH_PREFIX = "/livecloud/project/fzu/attn/"
 PLACEHOLDERS = {"", "XXXXX", "<redacted>", "<runtime>", "<actual>"}
 
 SHARED_KEYS = ("app", "clock_in", "request", "encryption", "timeout_seconds", "retry_times", "WXKey")
-DEFAULT_TIMEOUT_SECONDS = 30
+DEFAULT_TIMEOUT_SECONDS = 60
 DEFAULT_RETRY_TIMES = 3
 
 

@@ -6,12 +6,12 @@
 
 ## 功能
 
-- **一键签到**:顶层 `request.enabled=true` 后,`python main.py` 按 `users` 列表依次签到。
-- **只读预览 / 会话探活**:`--dry-run` 只预览字段;`--check` 探活会话。
+- **一键签到**:顶层 `request.enabled=true` 后,`python main.py` 按 `users` 列表依次签到。窗口外也会探活 Cookie,失效则自动刷新并推送通知。
+- **只读预览 / 会话探活**:`--dry-run` 只预览字段;`--check` 探活会话,刷新 Cookie 时同样通知。
 - **三重守卫**:① 服务端时间窗口;② 已成功/处理中不重复提交;③ 先跑 `check.action` 定位范围校验。
 - **Cookie / token 自动刷新**(可选):有就直接用;缺失或失效时,用已有 Cookie 或账号密码走学校 SSO,把新值写回 `data.json`。
 - **多用户汇总通知**:跑完向顶层 `WXKey` 推一条「全部成功 / 部分失败」,失败带原因。
-- **网络重试**:超时 30 秒,网络错误最多 3 次。
+- **网络重试**:超时 60 秒,网络错误最多 3 次。
 - **运行日志**:写入 `logs/zhfd-YYYYMMDD.log`。
 
 ## 环境
@@ -35,7 +35,7 @@ Linux / macOS 用 `cp data.json.example data.json`。`data.json` 已加入 `.git
 | --- | --- |
 | `request.enabled` | 总开关。`true` 才真正提交签到。 |
 | `WXKey` | 汇总通知的 Server酱 SendKey。跑完推一条总结果。 |
-| `timeout_seconds` | HTTP 超时,默认 `30`。 |
+| `timeout_seconds` | HTTP 超时,默认 `60`。 |
 | `retry_times` | 网络错误重试次数,默认 `3`。 |
 | `app` / `encryption` | 已按当前接口预填,正常不用改。 |
 
@@ -99,9 +99,9 @@ Linux / macOS 用 `cp data.json.example data.json`。`data.json` 已加入 `.git
 | 命令 | 做什么 |
 | --- | --- |
 | `python main.py --dry-run` | 只读预览将发送的字段,不签到、不推汇总。 |
-| `python main.py --check` | 探活 init / 时间戳。Cookie/token 缺失或失效时自动刷新。 |
-| `python main.py --refresh-cookie` | 强制刷新 Cookie/token 并写回。有 Cookie 或账号密码即可,不签到。 |
-| `python main.py` | 顶层 `request.enabled=true` 时一键签到。 |
+| `python main.py --check` | 探活会话。Cookie/token 缺失或失效时自动刷新并通知。 |
+| `python main.py --refresh-cookie` | 强制刷新 Cookie/token 并写回、通知。不签到。 |
+| `python main.py` | 窗口内签到;窗口外只探活/刷新 Cookie(刷新成功会通知)。 |
 | `python main.py --user 张三` | 只跑名为「张三」的用户。 |
 | `python main.py --config 其他.json` | 指定配置文件。 |
 
@@ -109,15 +109,17 @@ Linux / macOS 用 `cp data.json.example data.json`。`data.json` 已加入 `.git
 
 ### 定时任务示例
 
-把工作目录换成你的仓库路径。建议窗口开始后几分钟再跑,例如 `21:35`。
+建议两段任务:白天探活 Cookie,晚上窗口内签到。工作目录换成你的仓库路径。
 
-Windows 计划任务(每天 21:35):
+Windows 计划任务:
 
-在「任务计划程序」里新建基本任务:触发器选每天 21:35,操作选启动程序,程序填 `python`,参数填 `main.py`,起始于填仓库目录。
+- 每天 `12:00`(或任意非高峰):程序 `python`,参数 `main.py`,起始于仓库目录。窗口外只会探活/刷新 Cookie。
+- 每天 `21:35`:同样运行 `python main.py` 做签到。
 
 Linux crontab:
 
 ```cron
+0 12 * * * cd /path/to/zhfd && python3 main.py >> logs/cron.log 2>&1
 35 21 * * * cd /path/to/zhfd && python3 main.py >> logs/cron.log 2>&1
 ```
 

@@ -132,24 +132,28 @@ class MainDryRunTests(unittest.TestCase):
             config = _base_config(f"http://127.0.0.1:{server.port}")
             output = io.StringIO()
             with redirect_stdout(output):
-                code = main.run(config, send=False)
+                code, status = main.run(config, send=False)
         self.assertEqual(code, 0)
+        self.assertEqual(status, "preview")
         self.assertIn("DRY-RUN", output.getvalue())
         self.assertIn("协议预览", output.getvalue())
 
     def test_send_path_stops_when_init_shows_already_signed(self):
+        init = json.loads(json.dumps(_INIT_OK))
+        init["data"]["paramsData"].update({"FStartTime": "00:00", "FEndTime": "23:59"})
         with _JsonServer(
             {
-                "init.action": (200, _INIT_OK),
-                "currentTimestamp.action": (200, _TIMESTAMP_OK),
+                "init.action": (200, init),
+                "currentTimestamp.action": (200, {"success": True, "code": 1, "data": {"timestamp": 0}}),
             }
         ) as server:
             config = _base_config(f"http://127.0.0.1:{server.port}")
             config["request"] = {"enabled": True}
             output = io.StringIO()
             with redirect_stdout(output):
-                code = main.run(config, send=True)
+                code, status = main.run(config, send=True)
         self.assertEqual(code, 0)
+        self.assertEqual(status, "already_signed")
         self.assertIn("服务端已显示签到成功", output.getvalue())
 
     def test_send_path_refuses_outside_time_window(self):
@@ -165,9 +169,12 @@ class MainDryRunTests(unittest.TestCase):
         ) as server:
             config = _base_config(f"http://127.0.0.1:{server.port}")
             config["request"] = {"enabled": True}
-            with self.assertRaises(ValueError) as ctx:
-                main.run(config, send=True)
-        self.assertIn("不在服务端返回的签到时间窗口", str(ctx.exception))
+            output = io.StringIO()
+            with redirect_stdout(output):
+                code, status = main.run(config, send=True)
+        self.assertEqual(code, 0)
+        self.assertEqual(status, "session_ok")
+        self.assertIn("不在签到时间窗口内", output.getvalue())
 
     def test_send_submits_matched_campus_and_exits_zero(self):
         # In-window, not-yet-signed account with request.enabled=true: plain
@@ -194,8 +201,9 @@ class MainDryRunTests(unittest.TestCase):
             config["request"] = {"enabled": True}
             output = io.StringIO()
             with redirect_stdout(output):
-                code = main.run(config, send=True)
+                code, status = main.run(config, send=True)
         self.assertEqual(code, 0)
+        self.assertEqual(status, "success")
         self.assertIn("旗山校区", output.getvalue())
         self.assertIn("clockIn.action", output.getvalue())
 
@@ -247,7 +255,7 @@ class MultiUserConfigTests(unittest.TestCase):
 
         def fake_run(config, send, path=None):
             calls.append(config["name"])
-            return 0
+            return 0, "preview"
 
         root = {
             "app": {"base_url": "http://127.0.0.1:1"},
@@ -358,9 +366,10 @@ class SessionCheckTests(unittest.TestCase):
             config = _base_config(f"http://127.0.0.1:{server.port}")
             output = io.StringIO()
             with mock.patch.object(main, "notify_signed") as notify, redirect_stdout(output):
-                code, reason = main.check_session(config)
+                code, reason, refreshed = main.check_session(config)
         self.assertEqual(code, 0)
         self.assertEqual(reason, "")
+        self.assertFalse(refreshed)
         self.assertIn("会话有效", output.getvalue())
         notify.assert_not_called()
 
@@ -371,9 +380,10 @@ class SessionCheckTests(unittest.TestCase):
         with mock.patch("utils.protocol.fetch_init", side_effect=boom), mock.patch.object(
             main, "notify_signed"
         ) as notify, redirect_stderr(err):
-            code, reason = main.check_session(config)
+            code, reason, refreshed = main.check_session(config)
         self.assertEqual(code, 2)
         self.assertEqual(reason, "cookie错误")
+        self.assertFalse(refreshed)
         self.assertIn("会话异常", err.getvalue())
         notify.assert_called_once()
         text = notify.call_args[0][1]
@@ -385,9 +395,10 @@ class SessionCheckTests(unittest.TestCase):
         with mock.patch("utils.protocol.fetch_init", side_effect=boom), mock.patch.object(
             main, "notify_signed"
         ) as notify:
-            code, reason = main.check_session(config)
+            code, reason, refreshed = main.check_session(config)
         self.assertEqual(code, 2)
         self.assertEqual(reason, "网络超时")
+        self.assertFalse(refreshed)
         notify.assert_not_called()
 
     def test_missing_cookie_logs_in_before_first_request(self):
@@ -399,9 +410,10 @@ class SessionCheckTests(unittest.TestCase):
         ), mock.patch.object(main, "login_and_session", return_value=("JSESSIONID=new", "tok-new")) as login, mock.patch.object(
             main, "save_user_auth"
         ):
-            code, reason = main.check_session(config)
+            code, reason, refreshed = main.check_session(config)
         self.assertEqual(code, 0)
         self.assertEqual(reason, "")
+        self.assertTrue(refreshed)
         login.assert_called_once()
         self.assertEqual(config["auth"]["cookie"], "JSESSIONID=new")
         self.assertEqual(config["auth"]["token"], "tok-new")
@@ -416,9 +428,10 @@ class SessionCheckTests(unittest.TestCase):
         ), mock.patch.object(main, "login_and_session", return_value=("JSESSIONID=new", "tok-new")) as login, mock.patch.object(
             main, "save_user_auth"
         ) as save, mock.patch.object(main, "notify_signed") as notify:
-            code, reason = main.check_session(config)
+            code, reason, refreshed = main.check_session(config)
         self.assertEqual(code, 0)
         self.assertEqual(reason, "")
+        self.assertTrue(refreshed)
         login.assert_called_once()
         save.assert_called_once()
         self.assertEqual(config["auth"]["cookie"], "JSESSIONID=new")
@@ -496,6 +509,21 @@ class SsoHelperTests(unittest.TestCase):
 
 
 class SummaryAndValidationTests(unittest.TestCase):
+    def test_format_summary_session_probe_is_not_sign_in_success(self):
+        title, desp = format_summary(
+            [
+                {"name": "张三", "status": "session_ok", "reason": "会话有效（未到签到窗口）"},
+            ]
+        )
+        self.assertEqual(title, "会话探活完成")
+        self.assertIn("张三成功", desp)
+        title, desp = format_summary(
+            [
+                {"name": "张三", "status": "refreshed", "reason": "已刷新Cookie/token"},
+            ]
+        )
+        self.assertEqual(title, "Cookie 已刷新")
+
     def test_format_summary_all_success(self):
         title, desp = format_summary(
             [
@@ -550,6 +578,8 @@ class SummaryAndValidationTests(unittest.TestCase):
             self.assertEqual(main.main(["--refresh-cookie"]), 0)
             refresh.assert_called_once()
             run.assert_not_called()
+            refresh.assert_called_once()
+            self.assertTrue(refresh.call_args.kwargs.get("notify"))
 
 
 if __name__ == "__main__":

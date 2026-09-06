@@ -122,33 +122,56 @@ def print_preview(config: Mapping[str, Any], init_data: Mapping[str, Any], times
     _ = status
 
 
-def refresh_session_cookie(config: dict[str, Any], path: Path) -> None:
+def notify_cookie_refreshed(config: Mapping[str, Any]) -> None:
+    title = f"晚点名 · Cookie 已刷新 · {user_label(config)}"
+    desp = "Cookie/token 已更新并写回 data.json。窗口外探活完成，晚上可直接签到。"
+    notify_signed(config, title, desp)
+    key = summary_wx_key(config)
+    if key and not personal_wx_key(config):
+        try:
+            from utils.notification import wx_send
+
+            wx_send(key, text=title, desp=desp)
+        except Exception as exc:
+            write_log(f"[通知] 发送失败，已跳过：{exc}", error=True)
+
+
+def refresh_session_cookie(config: dict[str, Any], path: Path, *, notify: bool = False) -> None:
     cookie, token = login_and_session(config)
     apply_session(config, cookie, token)
     save_user_auth(path, user_label(config), cookie, token)
     extra = "和 token" if token else ""
     write_log(f"[{user_label(config)}] 已刷新 Cookie{extra} 并写回 {path.name}")
+    if notify:
+        notify_cookie_refreshed(config)
 
 
-def with_fresh_session(config: dict[str, Any], path: Path, fetch):
+def with_fresh_session(config: dict[str, Any], path: Path, fetch, *, notify_refresh: bool = False):
+    refreshed = False
     missing = (not auth_cookie(config) or not auth_token_value(config)) and can_refresh_session(config)
     if missing:
         write_log(f"[{user_label(config)}] Cookie/token 缺失，正在自动登录补齐…")
-        refresh_session_cookie(config, path)
+        refresh_session_cookie(config, path, notify=notify_refresh)
+        refreshed = True
     try:
-        return fetch()
+        return fetch(), refreshed
     except ValueError as exc:
         if not session_unauthenticated(exc) or not can_refresh_session(config):
             raise
         write_log(f"[{user_label(config)}] Cookie/token 失效，正在自动重新登录…")
-        refresh_session_cookie(config, path)
-        return fetch()
+        refresh_session_cookie(config, path, notify=notify_refresh)
+        return fetch(), True
 
 
-def check_session(config: dict[str, Any], path: Path | None = None) -> tuple[int, str]:
+def check_session(config: dict[str, Any], path: Path | None = None, *, notify_refresh: bool = False) -> tuple[int, str, bool]:
     """Read-only session precheck: validates init + server timestamp."""
     try:
-        init_data = with_fresh_session(config, path or DEFAULT_CONFIG, lambda: protocol.fetch_init(config))
+        init_data, refreshed = with_fresh_session(
+            config,
+            path or DEFAULT_CONFIG,
+            lambda: protocol.fetch_init(config),
+            notify_refresh=notify_refresh,
+        )
         protocol.fetch_server_timestamp(config)
     except ValueError as exc:
         reason = classify_reason(exc)
@@ -159,37 +182,46 @@ def check_session(config: dict[str, Any], path: Path | None = None) -> tuple[int
                 "晚点名 · 会话失效",
                 f"[{user_label(config)}] {reason}：{exc}",
             )
-        return 2, reason
+        return 2, reason, False
     write_log(f"[{user_label(config)}] 会话有效：init.action 与 currentTimestamp.action 均返回成功")
     params = init_data.get("paramsData", {})
     if isinstance(params, Mapping):
         write_log(f"签到窗口: {params.get('FStartTime', '?')} - {params.get('FEndTime', '?')}")
     write_log(f"当前状态: {'已签到（不重复）' if protocol.status_success(init_data) else '未签到'}")
-    return 0, ""
+    return 0, "", refreshed
 
 
-def run(config: Mapping[str, Any], send: bool, path: Path | None = None) -> int:
+def run(config: Mapping[str, Any], send: bool, path: Path | None = None) -> tuple[int, str]:
     runtime = dict(config)
-    init_data = with_fresh_session(runtime, path or DEFAULT_CONFIG, lambda: protocol.fetch_init(runtime))
+    init_data, refreshed = with_fresh_session(
+        runtime,
+        path or DEFAULT_CONFIG,
+        lambda: protocol.fetch_init(runtime),
+        notify_refresh=send,
+    )
     timestamp = protocol.fetch_server_timestamp(runtime)
     config = runtime
     if not send:
         print_preview(config, init_data, timestamp)
         write_log(f"[{user_label(config)}] DRY-RUN：未发送 check.action 或 clockIn.action。")
-        return 0
+        return 0, "preview"
 
     request_config = config.get("request", {})
     if not isinstance(request_config, Mapping) or request_config.get("enabled") is not True:
         raise ValueError("request.enabled 必须明确设置为 true")
+    params = init_data.get("paramsData", {})
+    in_window = isinstance(params, Mapping) and schedule.in_time_window(
+        timestamp, params.get("FStartTime"), params.get("FEndTime")
+    )
+    if not in_window:
+        write_log(f"[{user_label(config)}] 当前不在签到时间窗口内，已完成会话探活，不提交签到。")
+        if refreshed:
+            return 0, "refreshed"
+        return 0, "session_ok"
     if protocol.status_success(init_data):
         write_log(f"[{user_label(config)}] 服务端已显示签到成功，停止，不重复提交。")
         notify_signed(config, f"晚点名已签到 · {user_label(config)}", "服务端状态为成功/处理中，无需重复提交。")
-        return 0
-    params = init_data.get("paramsData", {})
-    if not isinstance(params, Mapping) or not schedule.in_time_window(
-        timestamp, params.get("FStartTime"), params.get("FEndTime")
-    ):
-        raise ValueError("当前不在服务端返回的签到时间窗口内，停止发送")
+        return 0, "already_signed"
     latitude, longitude, address = payload.location_values(config)
     check_query = crypto.aes_query_value(payload.build_check_payload(init_data, latitude, longitude), config)
     check_data = net.unwrap_success(
@@ -221,7 +253,7 @@ def run(config: Mapping[str, Any], send: bool, path: Path | None = None) -> int:
         f"晚点名签到成功 · {user_label(config)}",
         f"定位命中校区：{matched_name or '未知'}；服务端已接受请求。",
     )
-    return 0
+    return 0, "success"
 
 
 def _result(name: str, status: str, code: int, reason: str = "") -> dict[str, Any]:
@@ -237,19 +269,25 @@ def handle_user(config: dict[str, Any], args: argparse.Namespace) -> dict[str, A
         if args.refresh_cookie:
             if not can_refresh_session(config):
                 raise ValueError("未填写 Cookie 或账号密码，无法自动刷新会话")
-            refresh_session_cookie(config, args.config)
+            refresh_session_cookie(config, args.config, notify=True)
             return _result(name, "refreshed", 0, "已刷新Cookie/token")
         validate_user_config(config)
         if args.check:
-            code, reason = check_session(config, args.config)
+            code, reason, refreshed = check_session(config, args.config, notify_refresh=True)
             if code == 0:
-                return _result(name, "session_ok", 0)
+                return _result(name, "refreshed" if refreshed else "session_ok", 0, "已刷新Cookie/token" if refreshed else "")
             return _result(name, "failed", code, reason)
         send = False if args.dry_run else should_auto_send(config)
-        code = run(config, send=send, path=args.config)
+        code, status = run(config, send=send, path=args.config)
         if args.dry_run or not send:
             return _result(name, "preview", 0)
-        return _result(name, "success", code)
+        if status == "refreshed":
+            return _result(name, "refreshed", code, "已刷新Cookie/token")
+        if status == "session_ok":
+            return _result(name, "session_ok", code, "会话有效（未到签到窗口）")
+        if status == "already_signed":
+            return _result(name, "already_signed", code, "已签到")
+        return _result(name, status, code)
     except (ValueError, TypeError, KeyError) as exc:
         reason = classify_reason(exc)
         write_log(f"[{name}] 配置/协议错误: {exc}", error=True)
@@ -293,7 +331,9 @@ def main(argv: list[str] | None = None) -> int:
             print()
         results.append(handle_user(config, args))
     if not args.dry_run:
-        notify_summary(configs[0] if configs else root, results)
+        actionable = [item for item in results if item.get("status") not in {"session_ok", "skipped", "preview"}]
+        if actionable:
+            notify_summary(configs[0] if configs else root, results)
     failed = any(item["code"] != 0 for item in results)
     return 2 if failed else 0
 

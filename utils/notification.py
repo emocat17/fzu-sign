@@ -40,7 +40,10 @@ def format_summary(results: Sequence[Mapping[str, Any]]) -> tuple[str, str]:
             continue
         else:
             failed_lines.append(f"{name}失败，原因：{reason or '未知错误'}")
-    if not failed_lines:
+    statuses = [str(item.get("status") or "") for item in results]
+    if not failed_lines and all(status in {"session_ok", "refreshed", "preview", "skipped", ""} for status in statuses):
+        title = "Cookie 已刷新" if "refreshed" in statuses else "会话探活完成"
+    elif not failed_lines:
         title = "全部签到成功"
     elif not success_lines:
         title = "全部失败"
