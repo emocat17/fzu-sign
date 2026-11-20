@@ -6,9 +6,9 @@
 
 ## 功能
 
-- **一键签到**:顶层 `request.enabled=true` 后,`python main.py` 按 `users` 列表依次签到。窗口外也会探活 Cookie,失效则自动刷新并推送通知。
+- **一键签到**:`request.enabled=true` 后,`python main.py` 按 `users` 列表依次签到。窗口外也会探活 Cookie,失效则自动刷新并推送通知。
 - **只读预览 / 会话探活**:`--dry-run` 只预览字段;`--check` 探活会话,刷新 Cookie 时同样通知。
-- **三重守卫**:① 服务端时间窗口;② 已成功/处理中不重复提交;③ 先跑 `check.action` 定位范围校验。
+- **三重守卫**:① 服务端时间窗口; ② 已成功/处理中不重复提交; ③ 先跑 `check.action` 定位范围校验。
 - **Cookie / token 自动刷新**(可选):有就直接用;缺失或失效时,用已有 Cookie 或账号密码走学校 SSO,把新值写回 `data.json`。
 - **多用户汇总通知**:跑完向顶层 `WXKey` 推一条「全部成功 / 部分失败」,失败带原因。
 - **网络重试**:超时 60 秒,网络错误最多 3 次。
@@ -43,7 +43,7 @@ Linux / macOS 用 `cp data.json.example data.json`。`data.json` 已加入 `.git
 
 ### 每个用户 `users[]`
 
-| 字段 | 必填? | 填什么 |
+| 字段 | 必填 | 填什么 |
 | --- | --- | --- |
 | `name` | 是 | 显示名,日志/通知用来区分用户。 |
 | `enabled` | 否 | 该用户开关,默认 `true`;`false` 则跳过。 |
@@ -55,7 +55,7 @@ Linux / macOS 用 `cp data.json.example data.json`。`data.json` 已加入 `.git
 
 最低组合:已有 `cookie`+`token`,或只填账号密码(脚本登录后两者都会写回)。只填 Cookie 也可以,授权页能换到 token 时会自动补上。
 
-### 凭证怎么取
+### 凭证获取
 
 1. 用本人账号登录 **https://yzsxg.fzu.edu.cn/**,进入晚点名签到页面。
 2. 按 F12:
@@ -71,7 +71,7 @@ Linux / macOS 用 `cp data.json.example data.json`。`data.json` 已加入 `.git
 3. Cookie 和 token 都可以自动刷新:缺失或接口判定未登录时,脚本会打开授权页/SSO,从跳转 URL 取出 `token=`,和 Cookie 一起写回 `data.json`。
 4. 学校 SSO 平时无验证码。若风控弹出验证码 / 短信二次验证,自动登录会失败,需浏览器手动登录后再把 Cookie/token 填回。
 
-### 怎么取真实坐标
+### 真实坐标获取
 
 打开 [高德坐标拾取器](https://lbs.amap.com/tools/picker),点到**本人当时所在位置**。返回格式为 `经度,纬度`(如 `119.191596,26.05005`):
 
